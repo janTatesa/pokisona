@@ -1,12 +1,10 @@
 #![allow(dead_code)]
 
-mod sesbian_lexer;
-
 use bitflags::bitflags;
 use serde_yml::Value;
 
 pub struct Root<'a> {
-    yaml: Value,
+    yaml: Option<Value>,
     content: Content<'a>,
 }
 
@@ -29,6 +27,7 @@ pub enum Block<'a> {
     Callout(Callout<'a>),
     Embed(Embed<'a>),
     MathBlock(MathBlock<'a>),
+    FootnoteDeclaration(FootnoteDeclaration<'a>),
 }
 
 pub struct Paragraph<'a> {
@@ -40,6 +39,8 @@ pub enum RichTextSpan<'a> {
     TextWithModifiers(&'a str, Modifiers),
     InlineCodeBlock(&'a str),
     InlineMathBlock(&'a str),
+    InlineFootnote(&'a str),
+    Footnote(&'a str),
     Link(Link<'a>),
     Tag(&'a str),
 }
@@ -120,5 +121,10 @@ pub struct Embed<'a> {
 
 pub struct MathBlock<'a> {
     content: &'a str,
+    reference: Option<&'a str>,
+}
+
+pub struct FootnoteDeclaration<'a> {
+    footnote: &'a str,
     reference: Option<&'a str>,
 }
