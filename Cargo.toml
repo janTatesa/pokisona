@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 bitflags = "2.9.3"
+serde_yml = "0.0.12"
