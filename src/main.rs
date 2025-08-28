@@ -13,7 +13,12 @@ struct Root {
 
 struct Content {
     blocks: Vec<Block>,
-    headings: Vec<Content>,
+    headings: Vec<Heading>,
+}
+
+struct Heading {
+    name: String,
+    content: Content,
 }
 
 enum Block {
@@ -21,7 +26,7 @@ enum Block {
     CodeBlock(CodeBlock),
     ListItem(ListItem),
     Table(Table),
-    Quote(Vec<RichTextSpan>),
+    Quote(Quote),
     Callout(Callout),
     Embed(Embed),
     MathBlock(MathBlock),
@@ -95,6 +100,11 @@ enum ColumnAlignment {
     Left,
     Right,
     Center,
+}
+
+struct Quote {
+    content: Content,
+    reference: Option<String>,
 }
 
 struct Callout {
