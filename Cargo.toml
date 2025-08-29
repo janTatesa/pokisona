@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 bitflags = "2.9.3"
+pulldown-cmark = "0.13.0"
 serde_yml = "0.0.12"
