@@ -1,9 +1,11 @@
-[package]
-name = "pokisona"
+[workspace]
+members = ["pokisona", "pokisona-markdown"]
+default-members = ["pokisona"]
+resolver = "3"
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 
-[dependencies]
-bitflags = "2.9.3"
-pulldown-cmark = "0.13.0"
-serde_yml = "0.0.12"
+[workspace.dependencies]
+pokisona-markdown.path = "./pokisona-markdown"
