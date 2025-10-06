@@ -3,18 +3,19 @@ use itertools::{Itertools, PeekingNext};
 use pest::iterators::Pair;
 use pest::{Parser, Span};
 use pest_derive::Parser;
+use yoke::Yokeable;
 
 #[derive(Parser)]
 #[grammar = "../markdown.pest"]
 struct MarkdownParser;
 
-#[derive(Debug, Default)]
-pub struct Root<'a> {
+#[derive(Debug, Default, Yokeable)]
+pub struct Markdown<'a> {
     pub yaml: Option<Yaml<'a>>,
     pub content: Vec<Block<'a>>,
 }
 
-impl<'a> Root<'a> {
+impl<'a> Markdown<'a> {
     pub fn parse(input: &'a str) -> Self {
         let mut pairs = MarkdownParser::parse(Rule::main, input)
             .expect("Parsing markdown should be infallible")

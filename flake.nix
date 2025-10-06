@@ -1,17 +1,13 @@
 {
+  description = "A Nix-flake-based Rust development environment";
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    pest-ide-tools = {
-      url = "github:janTatesa/pest-ide-tools";
-      inputs = {
-        nixpkgs.follows = "nixpkgs";
-        rust-overlay.follows = "rust-overlay";
-      };
-    };
+    pest-ide-tools.url = "github:janTatesa/pest-ide-tools";
   };
 
   outputs =
@@ -23,8 +19,6 @@
           [
             "x86_64-linux"
             "aarch64-linux"
-            "x86_64-darwin"
-            "aarch64-darwin"
           ]
           (
             system:
@@ -34,14 +28,18 @@
                 overlays = [
                   inputs.rust-overlay.overlays.default
                   (final: prev: {
-                    pest-ide-tools = inputs.pest-ide-tools.packages.${system}.pest-ide-tools;
-                    rustfmt = prev.rust-bin.stable.latest.rustfmt;
                     rustToolchain = prev.rust-bin.stable.latest.default.override {
                       extensions = [
                         "rust-analyzer"
                         "rust-src"
                       ];
                     };
+                    rustfmt = prev.lib.hiPrio prev.rust-bin.nightly.latest.rustfmt;
+                    deps = with prev; [
+                      wayland
+                      libxkbcommon
+                      vulkan-loader
+                    ];
                   })
                 ];
               };
@@ -57,8 +55,14 @@
               pkg-config
               rustfmt
               rustToolchain
-              pest-ide-tools
             ];
+
+            env = {
+              ICED_BACKEND = "wgpu";
+              RUST_BACKTRACE = 1;
+              RUSTFLAGS = "-C link-arg=-Wl,-rpath,${pkgs.lib.makeLibraryPath pkgs.deps}";
+
+            };
           };
         }
       );

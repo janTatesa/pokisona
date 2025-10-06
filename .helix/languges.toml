@@ -1,0 +1,2 @@
+language-server.rust-analyzer.imports.merge.glob = false
+
