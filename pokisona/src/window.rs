@@ -7,11 +7,11 @@ use std::{
 use iced::{
     Background, Border, Element,
     Length::Fill,
-    widget::{column, container, row, text}
+    widget::{column, container, row, scrollable, text}
 };
 
 use crate::{
-    Message,
+    app::Message,
     color::{ACCENT, CRUST, MANTLE},
     markdown_store::MarkdownStore
 };
@@ -240,6 +240,7 @@ impl IndexMut<usize> for WindowLayoutNode {
 }
 
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 pub enum Window {
     #[default]
     Empty,
@@ -248,10 +249,16 @@ pub enum Window {
 
 impl Window {
     fn render(&self) -> Element<'_, Message> {
-        container(text(format!("{self:?}")))
-            .width(Fill)
-            .height(Fill)
-            .padding(5.0)
-            .into()
+        container(
+            scrollable(text(format!("{self:#?}"))).style(|theme, status| {
+                let mut style = scrollable::default(theme, status);
+                style.vertical_rail.scroller.color = ACCENT;
+                style
+            })
+        )
+        .width(Fill)
+        .height(Fill)
+        .padding(5.0)
+        .into()
     }
 }

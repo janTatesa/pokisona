@@ -55,13 +55,12 @@
               pkg-config
               rustfmt
               rustToolchain
+              openssl
             ];
 
             env = {
               ICED_BACKEND = "wgpu";
-              RUST_BACKTRACE = 1;
               RUSTFLAGS = "-C link-arg=-Wl,-rpath,${pkgs.lib.makeLibraryPath pkgs.deps}";
-
             };
           };
         }

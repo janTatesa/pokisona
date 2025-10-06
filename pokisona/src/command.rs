@@ -1,14 +1,14 @@
 use std::{path::PathBuf, str::FromStr};
 
 pub struct Command {
-    pub force: bool,
-    pub kind: CommandKind,
+    pub _force: bool,
+    pub kind: CommandKind
 }
 
 #[derive(Debug)]
 pub enum CommandParseError {
     NotFound,
-    NotEnoughArgs,
+    NotEnoughArgs
 }
 
 impl FromStr for Command {
@@ -17,8 +17,8 @@ impl FromStr for Command {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut args = s.split_whitespace();
         let mut name = args.next().ok_or(Self::Err::NotEnoughArgs)?;
-        let force = name.chars().next_back().ok_or(Self::Err::NotEnoughArgs)? == '!';
-        if force {
+        let _force = name.chars().next_back().ok_or(Self::Err::NotEnoughArgs)? == '!';
+        if _force {
             name = &name[..(name.len() - 1)];
         }
 
@@ -27,10 +27,8 @@ impl FromStr for Command {
             .or(CommandKind::from_alias(name))
             .ok_or(Self::Err::NotFound)?;
         let arg = args.next();
-        if let CommandKind::Open { path } = &mut kind
-            && let Some(arg) = arg
-        {
-            *path = PathBuf::from_str(arg).unwrap();
+        if let CommandKind::Open { path } = &mut kind {
+            *path = PathBuf::from_str(arg.ok_or(Self::Err::NotEnoughArgs)?).unwrap();
         }
 
         if let CommandKind::Split { path } = &mut kind
@@ -39,7 +37,7 @@ impl FromStr for Command {
             *path = PathBuf::from_str(arg).ok();
         }
 
-        Ok(Self { force, kind })
+        Ok(Self { _force, kind })
     }
 }
 
@@ -55,7 +53,7 @@ pub enum CommandKind {
     Open { path: PathBuf },
     Split { path: Option<PathBuf> },
     NextSplit,
-    PreviousSplit,
+    PreviousSplit
 }
 
 impl CommandKind {
@@ -64,14 +62,14 @@ impl CommandKind {
             "q" => Self::Quit,
             "qa" => Self::QuitAll,
             "e" | "edit" | "o" => Self::Open {
-                path: PathBuf::new(),
+                path: PathBuf::new()
             },
             "sp" => Self::Split { path: None },
             // "w" => Self::Write,
             // "wa" => Self::WriteAll,
             // "x" | "wq" => Self::WriteQuit,
             // "xa" | "wqa" => Self::WriteQuitAll,
-            _ => return None,
+            _ => return None
         })
     }
 }

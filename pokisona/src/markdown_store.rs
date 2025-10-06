@@ -2,7 +2,7 @@
 use std::{
     alloc::{self, Layout},
     mem::ManuallyDrop,
-    ptr::NonNull,
+    ptr::NonNull
 };
 
 use pokisona_markdown::Markdown;
@@ -10,20 +10,21 @@ use pokisona_markdown::Markdown;
 #[derive(Debug)]
 pub struct MarkdownStore {
     markdown: ManuallyDrop<Markdown<'static>>,
-    source: NonNull<str>,
+    source: NonNull<str>
 }
 
 impl MarkdownStore {
     pub fn new(source: String) -> Self {
         let source = source.leak();
         let source_ptr = NonNull::from_mut(source);
+        let markdown = ManuallyDrop::new(Markdown::parse(source));
         Self {
-            markdown: ManuallyDrop::new(Markdown::parse(source)),
-            source: source_ptr,
+            markdown,
+            source: source_ptr
         }
     }
 
-    pub fn get<'a>(&'a self) -> &'a Markdown<'a> {
+    pub fn _get<'a>(&'a self) -> &'a Markdown<'a> {
         &self.markdown
     }
 }
