@@ -1,6 +1,7 @@
 mod app;
 mod color;
 mod command;
+mod file_store;
 mod markdown_store;
 mod window;
 

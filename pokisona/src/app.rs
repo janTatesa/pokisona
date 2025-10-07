@@ -2,19 +2,19 @@ use std::path::PathBuf;
 
 use color_eyre::Result;
 use iced::{
-    Alignment::Center,
     Background, Border, Color, Element, Event,
     Length::Fill,
     Task, Theme, event, exit,
     keyboard::{self, Key, Modifiers, key::Named},
-    widget::{Id, Sensor, column, container, operation::focus, row, text, text_input}
+    widget::{Id, Sensor, column, container, operation::focus, stack, text_input}
 };
 use smol::fs;
 use strum_macros::IntoStaticStr;
 
 use crate::{
-    color::MANTLE,
+    color::CRUST,
     command::{Command, CommandKind},
+    file_store::FILE_STORE,
     markdown_store::MarkdownStore,
     window::{Window, WindowManager}
 };
@@ -32,11 +32,7 @@ pub enum Message {
     SubmitCommand,
     CommandInputSpawned,
     UncapturedIcedEvent(Event),
-    FileOpened {
-        path: PathBuf,
-        content: String,
-        split: bool
-    }
+    FileOpened { path: PathBuf, content: String }
 }
 
 impl Message {
@@ -81,24 +77,28 @@ impl Pokisona {
         Theme::CatppuccinMocha
     }
 
+    fn open_file(&mut self, path: PathBuf) -> Task<Message> {
+        let (data, newly_created) = FILE_STORE.get_ref(path.clone());
+        *self.window_manager.current_window_mut() = Window::Markdown(data);
+        if newly_created {
+            let absolute_path = self.vault_path.join(&path);
+            return Task::future(async {
+                let content = fs::read_to_string(absolute_path)
+                    .await
+                    .expect("Error handling not yet implemented");
+                Message::FileOpened { path, content }
+            });
+        }
+
+        Task::none()
+    }
+
     fn update(&mut self, msg: Message) -> Task<Message> {
-        dbg!(&msg);
         match msg {
             Message::TypeCommand(command) => self.typed_command = Some(command),
-            Message::FileOpened {
-                path,
-                content,
-                split: true
-            } => self
-                .window_manager
-                .add_window(Window::Markdown(path, MarkdownStore::new(content))),
-            Message::FileOpened {
-                path,
-                content,
-                split: false
-            } => self
-                .window_manager
-                .set_current_window(Window::Markdown(path, MarkdownStore::new(content))),
+            Message::FileOpened { path, content } => {
+                FILE_STORE.insert(&path, MarkdownStore::new(content))
+            }
             Message::SubmitCommand => {
                 let command: Command = self
                     .typed_command
@@ -106,26 +106,7 @@ impl Pokisona {
                     .unwrap()
                     .parse()
                     .expect("Error handling not yet implemented");
-                match command.kind {
-                    CommandKind::Quit => _ = self.window_manager.remove_window(),
-                    CommandKind::QuitAll => return exit(),
-                    CommandKind::Open { path } => {
-                        return Task::future(Self::read_file(self.vault_path.join(path), false));
-                    }
-                    CommandKind::Split { path } => {
-                        match path {
-                            Some(path) => {
-                                return Task::future(Self::read_file(
-                                    self.vault_path.join(path),
-                                    true
-                                ));
-                            }
-                            None => self.window_manager.add_window(Window::default())
-                        };
-                    }
-                    CommandKind::NextSplit => self.window_manager.next_window(),
-                    CommandKind::PreviousSplit => self.window_manager.previous_window()
-                }
+                return self.handle_command(command);
             }
             Message::CommandInputSpawned => return focus(ElementId::CommandInput),
             Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyPressed {
@@ -146,15 +127,32 @@ impl Pokisona {
         Task::none()
     }
 
-    async fn read_file(path: PathBuf, split: bool) -> Message {
-        let content = fs::read_to_string(&path)
-            .await
-            .expect("Error handling not yet implemented");
-        Message::FileOpened {
-            path,
-            content,
-            split
+    // TODO: Stupid app has for some reason a big break on command submit
+    fn handle_command(&mut self, command: Command) -> Task<Message> {
+        match command.kind {
+            CommandKind::Quit => {
+                if self.window_manager.remove_window().is_none() {
+                    return exit();
+                }
+            }
+            CommandKind::QuitAll => return exit(),
+            CommandKind::Open { path } => return self.open_file(path),
+            CommandKind::Split { path } => {
+                match path {
+                    Some(path) => {
+                        self.window_manager.add_window(Window::Empty);
+                        return self.open_file(path);
+                    }
+                    None => self
+                        .window_manager
+                        .add_window(self.window_manager.current_window().clone())
+                };
+            }
+            CommandKind::NextSplit => self.window_manager.next_window(),
+            CommandKind::PreviousSplit => self.window_manager.previous_window()
         }
+
+        Task::none()
     }
 
     fn view(&self) -> Element<'_, Message> {
@@ -168,24 +166,19 @@ impl Pokisona {
                     style.background = Background::Color(Color::TRANSPARENT);
                     style
                 })
-                .id(ElementId::CommandInput)
-                .line_height(1.0);
+                .id(ElementId::CommandInput);
             let sensored = Sensor::new(text_input).on_show(|_| Message::CommandInputSpawned);
-            // TODO: The : doesn't align with the text
-            let row = row![text(":").align_y(Center).line_height(1.0), sensored]
-                .align_y(Center)
-                .padding(5.0);
-            container(row).style(|_| {
-                container::Style::default()
-                    .border(Border::default().rounded(5.0))
-                    .background(Background::Color(MANTLE))
-            })
+            container(stack![sensored, container(":").center_y(Fill)])
+                .style(|_| container::background(CRUST))
         });
 
-        container(column![self.window_manager.render(), command_input].spacing(5.0))
-            .width(Fill)
-            .height(Fill)
-            .padding(5.0)
-            .into()
+        column![
+            container(self.window_manager.render())
+                .width(Fill)
+                .height(Fill)
+                .padding(5.0),
+            command_input
+        ]
+        .into()
     }
 }

@@ -13,3 +13,5 @@ strum_macros = "0.27.2"
 iced = { git = "https://github.com/iced-rs/iced", features = ["smol", "debug"] }
 catppuccin = "2.5.1"
 smol = "2.0.2"
+hashbrown = "0.16.0"
+dashmap = "6.1.0"

@@ -1,7 +1,9 @@
 use std::{
     mem,
     ops::{Index, IndexMut},
-    path::PathBuf
+    path::PathBuf,
+    rc::Rc,
+    sync::Arc
 };
 
 use iced::{
@@ -13,6 +15,7 @@ use iced::{
 use crate::{
     app::Message,
     color::{ACCENT, CRUST, MANTLE},
+    file_store::FileData,
     markdown_store::MarkdownStore
 };
 
@@ -50,7 +53,7 @@ impl WindowManager {
         self.next_window();
     }
 
-    /// If none is returned the application should quit
+    #[must_use = "If none is returned the application should quit"]
     pub fn remove_window(&mut self) -> Option<Window> {
         let window = self.root_node.remove_split_at(self.current_window)?;
         self.windows_len -= 1;
@@ -62,8 +65,12 @@ impl WindowManager {
         self.root_node.render(self.current_window)
     }
 
-    pub fn set_current_window(&mut self, new_window: Window) {
-        self.root_node[self.current_window] = new_window;
+    pub fn current_window(&self) -> &Window {
+        &self.root_node[self.current_window]
+    }
+
+    pub fn current_window_mut(&mut self) -> &mut Window {
+        &mut self.root_node[self.current_window]
     }
 }
 
@@ -239,12 +246,12 @@ impl IndexMut<usize> for WindowLayoutNode {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 #[allow(dead_code)]
 pub enum Window {
     #[default]
     Empty,
-    Markdown(PathBuf, MarkdownStore)
+    Markdown(Arc<FileData>)
 }
 
 impl Window {
