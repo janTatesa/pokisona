@@ -1,13 +1,10 @@
 // TODO: switch to smth more robust
 use std::{
-    cell::{Cell, OnceCell},
-    ops::Deref,
     path::{Path, PathBuf},
-    sync::{Arc, LazyLock, OnceLock, RwLock, Weak}
+    sync::{Arc, LazyLock, OnceLock, Weak}
 };
 
 use dashmap::DashMap;
-use hashbrown::HashMap;
 
 use crate::markdown_store::MarkdownStore;
 

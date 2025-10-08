@@ -1,8 +1,6 @@
 use std::{
     mem,
     ops::{Index, IndexMut},
-    path::PathBuf,
-    rc::Rc,
     sync::Arc
 };
 
@@ -15,8 +13,7 @@ use iced::{
 use crate::{
     app::Message,
     color::{ACCENT, CRUST, MANTLE},
-    file_store::FileData,
-    markdown_store::MarkdownStore
+    file_store::FileData
 };
 
 pub struct WindowManager {

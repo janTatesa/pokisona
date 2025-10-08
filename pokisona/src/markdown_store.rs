@@ -24,12 +24,8 @@ impl MarkdownStore {
         }
     }
 
-    pub fn _get<'a>(&'a self) -> &'a Markdown<'a> {
+    pub fn get<'a>(&'a self) -> &'a Markdown<'a> {
         &self.markdown
-    }
-
-    pub fn source(&self) -> &str {
-        unsafe { self.source.as_ref() }
     }
 }
 

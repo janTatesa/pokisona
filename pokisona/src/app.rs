@@ -1,29 +1,36 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use color_eyre::Result;
 use iced::{
+    Alignment::End,
     Background, Border, Color, Element, Event,
     Length::Fill,
     Task, Theme, event, exit,
     keyboard::{self, Key, Modifiers, key::Named},
-    widget::{Id, Sensor, column, container, operation::focus, stack, text_input}
+    widget::{Id, Sensor, column, container, operation::focus, row, text, text_input}
 };
-use smol::fs;
+use smol::{Timer, fs};
 use strum_macros::IntoStaticStr;
 
 use crate::{
-    color::CRUST,
+    color::{ACCENT, CRUST},
     command::{Command, CommandKind},
+    command_history::CommandHistory,
     file_store::FILE_STORE,
     markdown_store::MarkdownStore,
     window::{Window, WindowManager}
 };
 
 pub struct Pokisona {
-    _vault_name: String,
+    vault_name: String,
     vault_path: PathBuf,
     window_manager: WindowManager,
-    typed_command: Option<String>
+
+    command_history: CommandHistory,
+    typed_command: Option<String>,
+
+    error_id: u64,
+    error: Option<String>
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +39,12 @@ pub enum Message {
     SubmitCommand,
     CommandInputSpawned,
     UncapturedIcedEvent(Event),
-    FileOpened { path: PathBuf, content: String }
+    ClearError(u64),
+    FileOpened {
+        path: PathBuf,
+        // HACK: We have to use string because message has to be clone
+        content: Result<String, String>
+    }
 }
 
 impl Message {
@@ -59,10 +71,13 @@ impl Pokisona {
     pub fn run(vault_name: String, path: PathBuf) -> Result<(), iced::Error> {
         iced::application(
             move || Self {
-                _vault_name: vault_name.clone(),
+                vault_name: vault_name.clone(),
                 vault_path: path.clone(),
                 window_manager: WindowManager::default(),
-                typed_command: None
+                typed_command: None,
+                error: None,
+                error_id: 0,
+                command_history: CommandHistory::default()
             },
             Self::update,
             Self::view
@@ -85,7 +100,7 @@ impl Pokisona {
             return Task::future(async {
                 let content = fs::read_to_string(absolute_path)
                     .await
-                    .expect("Error handling not yet implemented");
+                    .map_err(|error| error.to_string());
                 Message::FileOpened { path, content }
             });
         }
@@ -93,34 +108,83 @@ impl Pokisona {
         Task::none()
     }
 
+    const ERROR_DISPLAY_DURATION: Duration = Duration::from_secs(1);
+    fn display_error(&mut self, error: String) -> Task<Message> {
+        self.error_id += 1;
+        self.error = Some(error);
+        let id = self.error_id;
+        Task::future(async move {
+            Timer::after(Self::ERROR_DISPLAY_DURATION).await;
+            Message::ClearError(id)
+        })
+    }
+
     fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
-            Message::TypeCommand(command) => self.typed_command = Some(command),
-            Message::FileOpened { path, content } => {
-                FILE_STORE.insert(&path, MarkdownStore::new(content))
+            Message::TypeCommand(command) => {
+                self.command_history.deselect();
+                self.typed_command = Some(command)
+            }
+            Message::FileOpened {
+                path,
+                content: Ok(source)
+            } => FILE_STORE.insert(&path, MarkdownStore::new(source)),
+            Message::FileOpened {
+                path,
+                content: Err(error)
+            } => {
+                return self
+                    .display_error(format!("Cannot open {}: {error}", path.to_string_lossy()));
             }
             Message::SubmitCommand => {
-                let command: Command = self
-                    .typed_command
-                    .take()
-                    .unwrap()
-                    .parse()
-                    .expect("Error handling not yet implemented");
+                if self.typed_command.as_ref().unwrap().is_empty() {
+                    return Task::none();
+                }
+
+                self.command_history.deselect();
+                let typed_command = self.typed_command.take().unwrap();
+                let command: Command = match typed_command.parse() {
+                    Ok(command) => command,
+                    Err(error) => {
+                        let error = format!("Error parsing command \"{typed_command}\": {error}");
+                        return self.display_error(error);
+                    }
+                };
+
+                self.command_history.push(typed_command);
                 return self.handle_command(command);
             }
             Message::CommandInputSpawned => return focus(ElementId::CommandInput),
-            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
                 modified_key: Key::Character(char),
                 modifiers,
                 ..
-            })) if char == ":" && !modifiers.contains(Modifiers::CTRL | Modifiers::ALT) => {
+            })) if char == ":"
+                && !modifiers.contains(Modifiers::CTRL | Modifiers::ALT)
+                && self.typed_command.is_none() =>
+            {
                 self.typed_command = Some(String::new())
             }
             Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
                 modified_key: Key::Named(Named::Escape),
                 modifiers,
                 ..
-            })) if modifiers == Modifiers::empty() => self.typed_command = None,
+            })) if modifiers == Modifiers::empty() => {
+                self.command_history.deselect();
+                self.typed_command = None
+            }
+            Message::ClearError(id) if self.error_id == id => self.error = None,
+            Message::ClearError(_) => {}
+            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
+                key: Key::Named(Named::ArrowUp),
+                modifiers,
+                ..
+            })) if modifiers == Modifiers::empty() => self.command_history.select_up(),
+            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
+                key: Key::Named(Named::ArrowDown),
+                modifiers,
+                ..
+            })) if modifiers == Modifiers::empty() => self.command_history.select_down(),
             Message::UncapturedIcedEvent(_) => {}
         }
 
@@ -156,29 +220,42 @@ impl Pokisona {
     }
 
     fn view(&self) -> Element<'_, Message> {
-        let command_input = self.typed_command.as_ref().map(|command| {
-            let text_input = text_input("Enter command", command)
-                .on_input(Message::TypeCommand)
-                .on_submit(Message::SubmitCommand)
-                .style(|theme, status| {
-                    let mut style = text_input::default(theme, status);
-                    style.border = Border::default();
-                    style.background = Background::Color(Color::TRANSPARENT);
-                    style
-                })
-                .id(ElementId::CommandInput);
-            let sensored = Sensor::new(text_input).on_show(|_| Message::CommandInputSpawned);
-            container(stack![sensored, container(":").center_y(Fill)])
-                .style(|_| container::background(CRUST))
-        });
+        let vault_name = container(self.vault_name.as_str())
+            .width(Fill)
+            .align_x(End)
+            .into();
 
-        column![
-            container(self.window_manager.render())
-                .width(Fill)
-                .height(Fill)
-                .padding(5.0),
-            command_input
-        ]
-        .into()
+        let bar_content: Element<'_, Message> = match (
+            self.command_history.currently_selected(),
+            self.typed_command.as_deref(),
+            &self.error
+        ) {
+            (Some(command), ..) | (_, Some(command), _) => {
+                let text_input = text_input("Enter command", command)
+                    .on_input(Message::TypeCommand)
+                    .on_submit(Message::SubmitCommand)
+                    .style(|theme, status| {
+                        let mut style = text_input::default(theme, status);
+                        style.border = Border::default();
+                        style.background = Background::Color(Color::TRANSPARENT);
+                        style
+                    })
+                    .id(ElementId::CommandInput)
+                    .padding(0);
+                let sensored = Sensor::new(text_input).on_show(|_| Message::CommandInputSpawned);
+                row![":", sensored, vault_name].into()
+            }
+            (_, _, Some(error)) => row![text(error).style(text::danger), vault_name].into(),
+            _ => vault_name
+        };
+
+        let bar = container(bar_content)
+            .style(|_| container::background(CRUST))
+            .width(Fill);
+        let windows = container(self.window_manager.render())
+            .width(Fill)
+            .height(Fill)
+            .padding(5.0);
+        column![windows, bar].into()
     }
 }

@@ -1,4 +1,10 @@
-use std::{path::PathBuf, str::FromStr};
+use std::{
+    fmt::{Display, Formatter},
+    path::PathBuf,
+    str::FromStr
+};
+
+use iced::widget::text::Highlighter;
 
 pub struct Command {
     pub _force: bool,
@@ -9,6 +15,17 @@ pub struct Command {
 pub enum CommandParseError {
     NotFound,
     NotEnoughArgs
+}
+
+impl Display for CommandParseError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let msg = match self {
+            CommandParseError::NotFound => "Command not found",
+            CommandParseError::NotEnoughArgs => "Not enough arguments"
+        };
+
+        f.write_str(msg)
+    }
 }
 
 impl FromStr for Command {
