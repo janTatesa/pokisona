@@ -7,7 +7,6 @@ use std::{
 
 use pokisona_markdown::Markdown;
 
-#[derive(Debug)]
 pub struct MarkdownStore {
     markdown: ManuallyDrop<Markdown<'static>>,
     source: NonNull<str>
@@ -24,7 +23,7 @@ impl MarkdownStore {
         }
     }
 
-    pub fn get<'a>(&'a self) -> &'a Markdown<'a> {
+    pub fn markdown<'a>(&'a self) -> &'a Markdown<'a> {
         &self.markdown
     }
 }

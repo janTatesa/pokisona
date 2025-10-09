@@ -10,3 +10,4 @@ edition = "2024"
 [workspace.dependencies]
 pokisona-markdown.path = "./pokisona-markdown"
 yoke = { version = "0.8.0", features = ["derive"] }
+itertools = "0.14.0"

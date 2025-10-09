@@ -7,15 +7,17 @@ use std::{
 use iced::{
     Background, Border, Element,
     Length::Fill,
-    widget::{column, container, row, scrollable, text}
+    widget::{column, container, row, scrollable, space}
 };
 
 use crate::{
-    app::Message,
+    app::{Message, Pokisona},
     color::{ACCENT, CRUST, MANTLE},
-    file_store::FileData
+    file_store::FileData,
+    markdown_view::render_markdown
 };
 
+#[derive(Clone)]
 pub struct WindowManager {
     root_node: WindowLayoutNode,
     windows_len: usize,
@@ -71,7 +73,7 @@ impl WindowManager {
     }
 }
 
-#[derive(Debug)]
+#[derive(Clone)]
 enum WindowLayoutNode {
     Window(Window),
     Split(Box<(WindowLayoutNode, WindowLayoutNode)>)
@@ -106,7 +108,12 @@ impl WindowLayoutNode {
             (WindowLayoutNode::Window(window), Some(0), _) => container(window.render())
                 .style(|_| {
                     container::Style::default()
-                        .border(Border::default().rounded(5.0).width(2.5).color(ACCENT))
+                        .border(
+                            Border::default()
+                                .rounded(Pokisona::BORDER_RADIUS)
+                                .width(Pokisona::BORDER_WIDTH)
+                                .color(ACCENT)
+                        )
                         .background(Background::Color(MANTLE))
                 })
                 .width(Fill)
@@ -115,7 +122,7 @@ impl WindowLayoutNode {
             (WindowLayoutNode::Window(window), ..) => container(window.render())
                 .style(|_| {
                     container::Style::default()
-                        .border(Border::default().rounded(5.0))
+                        .border(Border::default().rounded(Pokisona::BORDER_RADIUS))
                         .background(Background::Color(CRUST))
                 })
                 .width(Fill)
@@ -129,7 +136,7 @@ impl WindowLayoutNode {
                         Direction::Vertical
                     )
                 ]
-                .spacing(5.0)
+                .spacing(Pokisona::PADDING)
             )
             .width(Fill)
             .height(Fill)
@@ -142,7 +149,7 @@ impl WindowLayoutNode {
                         Direction::Horizontal
                     )
                 ]
-                .spacing(5.0)
+                .spacing(Pokisona::PADDING)
             )
             .width(Fill)
             .height(Fill)
@@ -243,7 +250,7 @@ impl IndexMut<usize> for WindowLayoutNode {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 #[allow(dead_code)]
 pub enum Window {
     #[default]
@@ -253,16 +260,22 @@ pub enum Window {
 
 impl Window {
     fn render(&self) -> Element<'_, Message> {
-        container(
-            scrollable(text(format!("{self:#?}"))).style(|theme, status| {
-                let mut style = scrollable::default(theme, status);
-                style.vertical_rail.scroller.color = ACCENT;
-                style
-            })
-        )
+        let content: Element<'_, Message> = match self {
+            Window::Empty => space().into(),
+            Window::Markdown(file_data) => file_data
+                .content()
+                .map(|content| render_markdown(content.markdown()))
+                .into()
+        };
+
+        container(scrollable(content).style(|theme, status| {
+            let mut style = scrollable::default(theme, status);
+            style.vertical_rail.scroller.color = ACCENT;
+            style
+        }))
         .width(Fill)
         .height(Fill)
-        .padding(5.0)
+        .padding(Pokisona::PADDING)
         .into()
     }
 }

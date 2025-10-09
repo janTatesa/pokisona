@@ -1,7 +1,6 @@
 use bitflags::bitflags;
 use itertools::{Itertools, PeekingNext};
-use pest::iterators::Pair;
-use pest::{Parser, Span};
+use pest::{Parser, Span, iterators::Pair};
 use pest_derive::Parser;
 use yoke::Yokeable;
 
@@ -12,9 +11,10 @@ struct MarkdownParser;
 #[derive(Debug, Default, Yokeable)]
 pub struct Markdown<'a> {
     pub yaml: Option<Yaml<'a>>,
-    pub content: Vec<Block<'a>>,
+    pub content: Vec<Block<'a>>
 }
 
+pub const MAX_HEADING_NESTING: u8 = 6;
 impl<'a> Markdown<'a> {
     pub fn parse(input: &'a str) -> Self {
         let mut pairs = MarkdownParser::parse(Rule::main, input)
@@ -24,7 +24,7 @@ impl<'a> Markdown<'a> {
             .next_if(|pair| pair.as_rule() == Rule::frontmatter)
             .map(|pair| Yaml {
                 span: pair.as_span(),
-                inner_span: pair.into_inner().next().unwrap().as_span(),
+                inner_span: pair.into_inner().next().unwrap().as_span()
             });
 
         let content = pairs.map(Block::parse).collect();
@@ -36,13 +36,13 @@ impl<'a> Markdown<'a> {
 #[derive(Debug)]
 pub struct Yaml<'a> {
     pub inner_span: Span<'a>,
-    pub span: Span<'a>,
+    pub span: Span<'a>
 }
 
 #[derive(Debug)]
 pub struct Block<'a> {
     pub span: Span<'a>,
-    pub kind: BlockKind<'a>,
+    pub kind: BlockKind<'a>
 }
 
 #[derive(Debug)]
@@ -50,23 +50,23 @@ pub enum BlockKind<'a> {
     Line(Line<'a>),
     Code {
         content: Span<'a>,
-        language: Option<Span<'a>>,
+        language: Option<Span<'a>>
     },
 
     ListItem(ListItem<'a>),
     Quote {
-        content: Vec<Line<'a>>,
+        content: Vec<Line<'a>>
     },
 
     Callout {
         kind: Span<'a>,
 
         title: Option<Span<'a>>,
-        content: Vec<Line<'a>>,
+        content: Vec<Line<'a>>
     },
 
     Math {
-        inner: Span<'a>,
+        inner: Span<'a>
     },
 
     Heading {
@@ -74,13 +74,13 @@ pub enum BlockKind<'a> {
         title_full: Span<'a>,
         nesting: u8,
         title: Line<'a>,
-        content: Vec<Block<'a>>,
+        content: Vec<Block<'a>>
     },
 
     Ruler,
     Comment {
-        inner: Span<'a>,
-    },
+        inner: Span<'a>
+    }
 }
 
 #[derive(Debug)]
@@ -88,7 +88,7 @@ pub struct ListItem<'a> {
     pub indentation: u16,
     pub content: Line<'a>,
     pub kind: ListItemType,
-    pub subitems: Vec<(Span<'a>, ListItem<'a>)>,
+    pub subitems: Vec<(Span<'a>, ListItem<'a>)>
 }
 
 impl<'a> ListItem<'a> {
@@ -105,7 +105,7 @@ impl<'a> ListItem<'a> {
                 let str = &kind.as_str()[..(kind.as_str().len() - 1)];
                 ListItemType::Numbered(str.parse().unwrap())
             }
-            _ => panic!("Invalid rule in list item kind {kind}"),
+            _ => panic!("Invalid rule in list item kind {kind}")
         };
 
         let content = Line::parse(inner.next().unwrap().into_inner());
@@ -117,7 +117,7 @@ impl<'a> ListItem<'a> {
             indentation,
             content,
             subitems,
-            kind,
+            kind
         }
     }
 }
@@ -139,23 +139,23 @@ impl<'a> Block<'a> {
                     }
                     Rule::code_block_content => B::Code {
                         language: None,
-                        content: pair.as_span(),
+                        content: pair.as_span()
                     },
-                    _ => panic!("Invalid rule in code block {pair}"),
+                    _ => panic!("Invalid rule in code block {pair}")
                 }
             }
             Rule::math_block => B::Math {
-                inner: inner.next().unwrap().as_span(),
+                inner: inner.next().unwrap().as_span()
             },
             Rule::callout => B::Callout {
                 kind: inner.next().unwrap().as_span(),
                 title: inner
                     .next_if(|pair| pair.as_rule() == Rule::callout_title)
                     .map(|pair| pair.as_span()),
-                content: inner.map(|pair| Line::parse(pair.into_inner())).collect(),
+                content: inner.map(|pair| Line::parse(pair.into_inner())).collect()
             },
             Rule::quote => B::Quote {
-                content: inner.map(|pair| Line::parse(pair.into_inner())).collect(),
+                content: inner.map(|pair| Line::parse(pair.into_inner())).collect()
             },
             Rule::list_item => B::ListItem(ListItem::parse(inner)),
             Rule::heading => {
@@ -166,15 +166,15 @@ impl<'a> Block<'a> {
                     nesting: title_inner.next().unwrap().as_str().len() as u8,
                     title_full,
                     title: Line::parse(title_inner.next().unwrap().into_inner()),
-                    content: inner.map(Block::parse).collect(),
+                    content: inner.map(Block::parse).collect()
                 }
             }
             Rule::line => B::Line(Line::parse(inner)),
             Rule::comment => B::Comment {
-                inner: inner.next().unwrap().as_span(),
+                inner: inner.next().unwrap().as_span()
             },
             Rule::ruler => B::Ruler,
-            rule => panic!("Invalid rule inside a block: {rule:?}"),
+            rule => panic!("Invalid rule inside a block: {rule:?}")
         };
 
         Block { span, kind }
@@ -189,7 +189,7 @@ impl<'a> Line<'a> {
 
         fn modifier_span<'a>(
             modifier: Modifier,
-            pairs: impl Iterator<Item = Pair<'a, Rule>>,
+            pairs: impl Iterator<Item = Pair<'a, Rule>>
         ) -> LineItemKind<'a> {
             I::ModifierSpan(modifier, Line::parse(pairs))
         }
@@ -208,10 +208,10 @@ impl<'a> Line<'a> {
                     Rule::text | Rule::text_wrapped => I::Text,
                     Rule::escaped_char => I::EscapedChar,
                     Rule::inline_code_block => I::InlineCodeBlock {
-                        inner: inner.next().unwrap().as_span(),
+                        inner: inner.next().unwrap().as_span()
                     },
-                    Rule::inline_math_block => I::InlineCodeBlock {
-                        inner: inner.next().unwrap().as_span(),
+                    Rule::inline_math_block => I::InlineMathBlock {
+                        inner: inner.next().unwrap().as_span()
                     },
                     Rule::link => {
                         let mut target = inner.next().unwrap().into_inner();
@@ -224,17 +224,17 @@ impl<'a> Line<'a> {
                                 Subtarget::Reference(subtarget.as_span())
                             }
                             Some(rule) => panic!("Invalid rule inside link: {rule}"),
-                            _ => Subtarget::None,
+                            _ => Subtarget::None
                         };
                         let display = target.next().map(|pair| pair.as_span());
                         I::Link {
                             file_target,
                             subtarget,
-                            display,
+                            display
                         }
                     }
                     Rule::embed => I::Embed {
-                        inner: inner.next().unwrap().as_span(),
+                        inner: inner.next().unwrap().as_span()
                     },
                     Rule::tag => I::Tag,
                     Rule::reference => I::Reference,
@@ -243,12 +243,13 @@ impl<'a> Line<'a> {
                         display: inner
                             .next_if(|pair| pair.as_rule() == Rule::external_link_display)
                             .map(|pair| pair.as_span()),
-                        target: inner.next().unwrap().as_span(),
+                        target: inner.next().unwrap().as_span()
                     },
                     Rule::external_embed => I::ExternalEmbed {
-                        target: inner.next().unwrap().as_span(),
+                        target: inner.next().unwrap().as_span()
                     },
-                    rule => panic!("Invalid rule inside line: {rule:?}"),
+                    Rule::soft_break => I::SoftBreak,
+                    rule => panic!("Invalid rule inside line: {rule:?}")
                 };
                 LineItem { span, kind }
             })
@@ -260,7 +261,7 @@ impl<'a> Line<'a> {
 #[derive(Debug)]
 pub struct LineItem<'a> {
     pub span: Span<'a>,
-    pub kind: LineItemKind<'a>,
+    pub kind: LineItemKind<'a>
 }
 
 #[derive(Debug)]
@@ -268,37 +269,38 @@ pub enum LineItemKind<'a> {
     ModifierSpan(Modifier, Line<'a>),
     Text,
     InlineCodeBlock {
-        inner: Span<'a>,
+        inner: Span<'a>
     },
     InlineMathBlock {
-        inner: Span<'a>,
+        inner: Span<'a>
     },
+    SoftBreak,
     Link {
         file_target: Span<'a>,
         subtarget: Subtarget<'a>,
-        display: Option<Span<'a>>,
+        display: Option<Span<'a>>
     },
     ExternalLink {
         target: Span<'a>,
-        display: Option<Span<'a>>,
+        display: Option<Span<'a>>
     },
 
     ExternalEmbed {
-        target: Span<'a>,
+        target: Span<'a>
     },
 
     Embed {
-        inner: Span<'a>,
+        inner: Span<'a>
     },
 
     EscapedChar,
     Tag,
     Reference,
-    Comment,
+    Comment
 }
 
 bitflags! {
-    #[derive(Debug)]
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
     pub struct Modifier: u8 {
         const BOLD = 1 << 0;
         const ITALIC = 1 << 1;
@@ -311,12 +313,12 @@ bitflags! {
 pub enum Subtarget<'a> {
     None,
     Heading(Span<'a>),
-    Reference(Span<'a>),
+    Reference(Span<'a>)
 }
 
 #[derive(Debug)]
 pub enum ListItemType {
     Bullet,
     Numbered(u16),
-    Task(bool),
+    Task(bool)
 }

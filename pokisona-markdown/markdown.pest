@@ -56,7 +56,7 @@ embed_inner = {(!("]]" | NEWLINE) ~ ANY)*}
 embed          =  { "![[" ~  embed_inner ~ "]]" }
 
 escaped_char = { "\\" ~ ANY }
-soft_break   = _{ "\\" ~ NEWLINE }
+soft_break   = { "\\" ~ NEWLINE }
 hard_break = _{NEWLINE | &EOI}
 
 heading_sharps = {!"#######" ~ "#"+ }

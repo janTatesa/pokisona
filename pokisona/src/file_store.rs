@@ -12,18 +12,17 @@ pub static FILE_STORE: LazyLock<FileStore> = LazyLock::new(FileStore::default);
 #[derive(Default, Debug)]
 pub struct FileStore(DashMap<PathBuf, Weak<FileData>>);
 
-#[derive(Debug)]
 pub struct FileData {
     path: PathBuf,
     content: OnceLock<MarkdownStore>
 }
 
 impl FileData {
-    fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         &self.path
     }
 
-    fn content(&self) -> Option<&MarkdownStore> {
+    pub fn content(&self) -> Option<&MarkdownStore> {
         self.content.get()
     }
 }
@@ -50,8 +49,10 @@ impl FileStore {
     }
 
     pub fn insert(&self, path: &Path, content: MarkdownStore) {
-        if let Some(data) = self.0.get(path).and_then(|weak| weak.upgrade()) {
-            data.content.set(content).unwrap();
+        if let Some(data) = self.0.get(path).and_then(|weak| weak.upgrade())
+            && data.content.set(content).is_err()
+        {
+            panic!("Attemted to read a single file twice")
         }
     }
 }

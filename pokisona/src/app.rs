@@ -13,7 +13,7 @@ use smol::{Timer, fs};
 use strum_macros::IntoStaticStr;
 
 use crate::{
-    color::{ACCENT, CRUST},
+    color::CRUST,
     command::{Command, CommandKind},
     command_history::CommandHistory,
     file_store::FILE_STORE,
@@ -26,6 +26,8 @@ pub struct Pokisona {
     vault_path: PathBuf,
     window_manager: WindowManager,
 
+    scale: f32,
+
     command_history: CommandHistory,
     typed_command: Option<String>,
 
@@ -35,6 +37,7 @@ pub struct Pokisona {
 
 #[derive(Debug, Clone)]
 pub enum Message {
+    InitialFileOpen(PathBuf),
     TypeCommand(String),
     SubmitCommand,
     CommandInputSpawned,
@@ -68,23 +71,37 @@ impl From<ElementId> for Id {
 }
 
 impl Pokisona {
-    pub fn run(vault_name: String, path: PathBuf) -> Result<(), iced::Error> {
+    const DEFAULT_SCALE: f32 = 1.5;
+    pub fn run(
+        vault_name: String,
+        path: PathBuf,
+        initial_file: Option<PathBuf>
+    ) -> Result<(), iced::Error> {
         iced::application(
-            move || Self {
-                vault_name: vault_name.clone(),
-                vault_path: path.clone(),
-                window_manager: WindowManager::default(),
-                typed_command: None,
-                error: None,
-                error_id: 0,
-                command_history: CommandHistory::default()
+            move || {
+                (
+                    Self {
+                        vault_name: vault_name.clone(),
+                        vault_path: path.clone(),
+                        window_manager: WindowManager::default(),
+                        typed_command: None,
+                        error: None,
+                        error_id: 0,
+                        command_history: CommandHistory::default(),
+                        scale: Self::DEFAULT_SCALE
+                    },
+                    match initial_file.clone() {
+                        Some(initial_file) => Task::done(Message::InitialFileOpen(initial_file)),
+                        None => Task::none()
+                    }
+                )
             },
             Self::update,
             Self::view
         )
         .theme(Self::theme)
         .subscription(|_| event::listen_with(Message::from_iced_event))
-        .scale_factor(|_| 2.0)
+        .scale_factor(|app| app.scale)
         .run()
     }
 
@@ -157,12 +174,8 @@ impl Pokisona {
             Message::CommandInputSpawned => return focus(ElementId::CommandInput),
             Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
                 modified_key: Key::Character(char),
-                modifiers,
                 ..
-            })) if char == ":"
-                && !modifiers.contains(Modifiers::CTRL | Modifiers::ALT)
-                && self.typed_command.is_none() =>
-            {
+            })) if char == ":" && self.typed_command.is_none() => {
                 self.typed_command = Some(String::new())
             }
             Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
@@ -179,13 +192,33 @@ impl Pokisona {
                 key: Key::Named(Named::ArrowUp),
                 modifiers,
                 ..
-            })) if modifiers == Modifiers::empty() => self.command_history.select_up(),
+            })) => self.command_history.select_up(),
             Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
                 key: Key::Named(Named::ArrowDown),
-                modifiers,
                 ..
-            })) if modifiers == Modifiers::empty() => self.command_history.select_down(),
+            })) => self.command_history.select_down(),
+            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+                modified_key: Key::Character(char),
+                modifiers: Modifiers::CTRL,
+                ..
+            })) if char == "+" => self.scale += 0.1,
+            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+                modified_key: Key::Character(char),
+                modifiers: Modifiers::CTRL,
+                ..
+            })) if char == "-" => self.scale -= 0.5,
+            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyPressed {
+                modified_key: Key::Character(char),
+                modifiers: Modifiers::CTRL,
+                ..
+            })) if char == "0" => self.scale = Self::DEFAULT_SCALE,
             Message::UncapturedIcedEvent(_) => {}
+            Message::InitialFileOpen(path) => {
+                return self.handle_command(Command {
+                    _force: false,
+                    kind: CommandKind::Open { path }
+                });
+            }
         }
 
         Task::none()
@@ -219,6 +252,11 @@ impl Pokisona {
         Task::none()
     }
 
+    pub const BORDER_RADIUS: f32 = 5.;
+    pub const BORDER_WIDTH: f32 = 2.5;
+    pub const FONT_SIZE: f32 = 16.;
+    pub const PADDING: f32 = 5.0;
+    pub const SMOL_FONT_SIZE: f32 = 10.0;
     fn view(&self) -> Element<'_, Message> {
         let vault_name = container(self.vault_name.as_str())
             .width(Fill)
@@ -252,10 +290,7 @@ impl Pokisona {
         let bar = container(bar_content)
             .style(|_| container::background(CRUST))
             .width(Fill);
-        let windows = container(self.window_manager.render())
-            .width(Fill)
-            .height(Fill)
-            .padding(5.0);
+        let windows = container(self.window_manager.render()).padding(Self::PADDING);
         column![windows, bar].into()
     }
 }

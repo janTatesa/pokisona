@@ -8,5 +8,5 @@ bitflags = "2.9.3"
 pest = "2.8.2"
 serde_yml = "0.0.12"
 pest_derive = { version = "2.8.2", features = ["grammar-extras"]}
-itertools = "0.14.0"
 yoke.workspace = true
+itertools.workspace = true

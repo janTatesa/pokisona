@@ -4,8 +4,6 @@ use std::{
     str::FromStr
 };
 
-use iced::widget::text::Highlighter;
-
 pub struct Command {
     pub _force: bool,
     pub kind: CommandKind
