@@ -7,7 +7,7 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    pest-ide-tools.url = "github:janTatesa/pest-ide-tools";
+    # pest-ide-tools.url = "github:janTatesa/pest-ide-tools";
   };
 
   outputs =

@@ -10,4 +10,5 @@ edition = "2024"
 [workspace.dependencies]
 pokisona-markdown.path = "./pokisona-markdown"
 yoke = { version = "0.8.0", features = ["derive"] }
-itertools = "0.14.0"
+# TODO: switch back to crates.io itertools when https://github.com/rust-itertools/itertools/pull/1071 is merged
+itertools = { git = "https://github.com/janTatesa/itertools", branch = "add_peeking_map_while" }

@@ -1,0 +1,19 @@
+[theme]
+# Currently supporting: mocha macchiato frappe and latte
+flavor = "mocha"
+# Currently supporting: rosewater flamingo pink mauve red maroon peach yellow green teal sky sapphire blue lavender
+accent = "mauve"
+
+[scale]
+default = 1.5
+default_step = 0.5
+
+[keybindings]
+"C-+" = "scale-up"
+"C-=" = "scale-up"
+C-minus = "scale-down"
+C-0 = "scale-reset"
+up = "history-up"
+down = "history-down"
+"S-;" = "command-mode-open"
+esc = "command-mode-exit"

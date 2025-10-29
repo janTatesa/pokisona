@@ -1,138 +1,121 @@
-use std::iter::{self};
-
-use iced::{
-    Alignment::Start,
-    Border, Element, Length,
-    font::{self, Weight},
-    widget::{
-        Column, column, container, rule, space, span, text,
-        text::{Rich, Span}
-    }
-};
-use pokisona_markdown::{
-    Block, BlockKind, LineItem, LineItemKind, MAX_HEADING_NESTING, Markdown, Modifier
+use std::{
+    iter::{self, Peekable},
+    slice
 };
 
-use crate::{
-    app::{Message, Pokisona},
-    color::{ACCENT, CRUST, OVERLAY0}
-};
+use either::Either;
+use itertools::{Itertools, put_back};
+use pokisona_markdown::{Block, BlockKind, Line, LineItem, Markdown, Modifiers};
 
-pub fn render_markdown<'a>(markdown: &'a Markdown<'a>) -> Element<'a, Message> {
+use crate::widget::{Spacing, Span, Widget};
+
+pub fn render_markdown<'a>(markdown: &'a Markdown<'a>) -> Widget<'a> {
     let iter = markdown
         .yaml
         .as_ref()
-        .map(|yaml| {
-            // TODO: render the frontmatter
-            container(yaml.inner_span.as_str())
-                .style(|_| container::background(CRUST))
-                .into()
-        })
+        .map(|_| Widget::NotYetSupported)
         .into_iter()
         .chain(markdown.content.iter().map(render_block));
-    Column::from_iter(iter).spacing(Pokisona::PADDING).into()
+    Widget::column(Spacing::Normal, iter)
 }
 
-const CODE_BLOCK_LEN: u8 = 80;
-fn render_block<'a>(block: &'a Block<'a>) -> Element<'a, Message> {
+fn render_block<'a>(block: &'a Block<'a>) -> Widget<'a> {
     match &block.kind {
-        BlockKind::Line(line) => Rich::from_iter(line.0.iter().flat_map(render_line_item)).into(),
-        BlockKind::Code { content, language } => {
-            let border = Border::default().rounded(Pokisona::BORDER_RADIUS);
-            let lang =
-                container(language.map(|lang| text(lang.as_str()).size(Pokisona::SMOL_FONT_SIZE)))
-                    .align_right(Length::Fixed(Pokisona::FONT_SIZE * CODE_BLOCK_LEN as f32))
-                    .align_y(Start);
-            container(column![lang, content.as_str()].padding(Pokisona::PADDING))
-                .style(move |_| container::background(CRUST).border(border))
-                .into()
-        }
-        BlockKind::ListItem(_) => "Lists are not yet supported".into(),
-        BlockKind::Quote { .. } => "Quotes are not yet supported".into(),
-        BlockKind::Callout { .. } => "Callouts are not yet supported".into(),
-        BlockKind::Math { .. } => "Math blocks are not yet supported".into(),
+        BlockKind::Line(line) => Widget::row(
+            Spacing::Normal,
+            LineItemIterWrapper(LineItemIter::new(line, Modifiers::empty()).peekable())
+        ),
+        BlockKind::Code { .. }
+        | BlockKind::ListItem(_)
+        | BlockKind::Quote { .. }
+        | BlockKind::Callout { .. }
+        | BlockKind::Math { .. } => Widget::NotYetSupported,
         BlockKind::Heading {
             nesting,
             title,
             content,
             ..
-        } => Column::from_iter(
-            iter::once(
-                Rich::from_iter(title.0.iter().flat_map(render_line_item))
-                    .size(Pokisona::FONT_SIZE + (MAX_HEADING_NESTING + 1 - nesting) as f32 * 2.)
-                    .into()
-            )
-            .chain(content.iter().map(render_block))
-        )
-        .into(),
-        BlockKind::Ruler => rule::horizontal(Pokisona::BORDER_WIDTH).into(),
-        BlockKind::Comment { .. } => space().into()
+        } => Widget::Heading {
+            title: LineItemIterWrapper(LineItemIter::new(title, Modifiers::empty()).peekable())
+                .collect(),
+            content: content.iter().map(render_block).collect(),
+            nesting: *nesting
+        },
+        BlockKind::Ruler => Widget::Separator,
+        BlockKind::Comment { .. } => Widget::Space
     }
 }
 
-#[allow(
-    clippy::large_enum_variant,
-    reason = "Span is way more common than modifier"
-)]
-enum SpanIter<'a> {
-    Modifier(Modifier, Box<dyn Iterator<Item = Span<'a>> + 'a>),
-    Span(Option<Span<'a>>)
-}
-
-impl<'a> Iterator for SpanIter<'a> {
-    type Item = Span<'a>;
+// TODO: simplify this
+// sis literally needed to create two itterators for such a simple task as making modified spans unified in a single rich text
+// what's wrong with me
+struct LineItemIterWrapper<'a>(Peekable<LineItemIter<'a>>);
+impl<'a> Iterator for LineItemIterWrapper<'a> {
+    type Item = Widget<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self {
-            SpanIter::Modifier(modifier, span_iter) => {
-                let mut span = span_iter.next()?;
-                let mut font = span.font.unwrap_or_default();
-                match *modifier {
-                    modifier if modifier == Modifier::BOLD | Modifier::ITALIC => {
-                        font.weight = Weight::Bold;
-                        font.style = font::Style::Italic;
-                    }
-                    Modifier::BOLD => font.weight = Weight::Bold,
-                    Modifier::ITALIC => font.style = font::Style::Italic,
-                    Modifier::STRIKETHROUGH => span.strikethrough = true,
-                    Modifier::HIGHLIGHT => {
-                        span = span
-                            .background(ACCENT)
-                            .color(CRUST)
-                            .border(Border::default().rounded(Pokisona::BORDER_RADIUS))
-                    }
-                    _ => {}
-                }
-                Some(span.font(font))
-            }
-            SpanIter::Span(span) => span.take()
+        let widget = self.0.next()?.right_or_else(|span| {
+            // TODO: When put back is turned to a method, use it instead
+            let mut put_back = put_back(&mut self.0);
+            let iter = iter::once(span)
+                .chain(put_back.peeking_map_while(|item| item.map_right(Either::Right)));
+            Widget::rich_text(iter)
+        });
+
+        Some(widget)
+    }
+}
+
+struct LineItemIter<'a> {
+    modifiers: Modifiers,
+    inner: Peekable<slice::Iter<'a, LineItem<'a>>>,
+    nested: Option<Box<LineItemIter<'a>>>
+}
+
+impl<'a> LineItemIter<'a> {
+    fn new(line: &'a Line<'a>, modifiers: Modifiers) -> Self {
+        Self {
+            inner: line.0.iter().peekable(),
+            nested: None,
+            modifiers
         }
     }
 }
 
-fn render_line_item<'a>(item: &'a LineItem<'a>) -> SpanIter<'a> {
-    let span = match &item.kind {
-        LineItemKind::ModifierSpan(modifier, line) => {
-            return SpanIter::Modifier(
-                *modifier,
-                Box::new(line.0.iter().flat_map(render_line_item))
-            );
-        }
-        LineItemKind::Text => span(item.span.as_str()),
-        LineItemKind::InlineCodeBlock { inner } => span(inner.as_str())
-            .background(CRUST)
-            .border(Border::default().rounded(Pokisona::BORDER_RADIUS)),
-        LineItemKind::InlineMathBlock { .. } => span("Math blocks are not yet supported"),
-        LineItemKind::Link { .. } => span("Links and embeds are not yet supported"),
-        LineItemKind::ExternalLink { .. } => span("Links and embed are not yet supported"),
-        LineItemKind::ExternalEmbed { .. } => span("Links and embeds are not yet supported"),
-        LineItemKind::Embed { .. } => span("Links and embeds are not yet supported"),
-        LineItemKind::EscapedChar => span(&item.span.as_str()[1..=1]),
-        LineItemKind::Tag => span(item.span.as_str()).color(ACCENT),
-        LineItemKind::Reference => span(item.span.as_str()).color(OVERLAY0),
-        LineItemKind::Comment => span(""),
-        LineItemKind::SoftBreak => span("\n")
-    };
+impl<'a> Iterator for LineItemIter<'a> {
+    type Item = Either<Span<'a>, Widget<'a>>;
 
-    SpanIter::Span(Some(span))
+    fn next(&mut self) -> Option<Self::Item> {
+        use pokisona_markdown::LineItemKind as I;
+        if let Some(widget) = self.nested.as_mut().and_then(|iter| iter.next()) {
+            return Some(widget);
+        }
+
+        let line_item = self.inner.next()?;
+        let widget = match &line_item.kind {
+            I::ModifierSpan(modifiers, line) => {
+                self.nested = Some(Box::new(Self::new(line, self.modifiers | *modifiers)));
+                return self.next();
+            }
+            I::Text => {
+                return Some(Either::Left(Span {
+                    modifiers: self.modifiers,
+                    text: line_item.span.as_str().into()
+                }));
+            }
+            I::InlineCodeBlock { inner } => Widget::InlineCode(inner.as_str()),
+            I::InlineMathBlock { inner } => Widget::InlineMath(inner.as_str()),
+            I::SoftBreak
+            | I::EscapedChar
+            | I::Link { .. }
+            | I::ExternalLink { .. }
+            | I::ExternalEmbed { .. }
+            | I::Embed { .. } => Widget::NotYetSupported,
+            I::Tag => Widget::Tag(line_item.span.as_str()),
+            I::Reference => Widget::Reference(line_item.span.as_str()),
+            I::Comment => Widget::Space
+        };
+
+        Some(Either::Right(widget))
+    }
 }

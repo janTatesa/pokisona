@@ -181,14 +181,14 @@ impl<'a> Block<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Line<'a>(pub Vec<LineItem<'a>>);
 impl<'a> Line<'a> {
     fn parse(pairs: impl Iterator<Item = Pair<'a, Rule>>) -> Self {
         use LineItemKind as I;
 
         fn modifier_span<'a>(
-            modifier: Modifier,
+            modifier: Modifiers,
             pairs: impl Iterator<Item = Pair<'a, Rule>>
         ) -> LineItemKind<'a> {
             I::ModifierSpan(modifier, Line::parse(pairs))
@@ -200,11 +200,11 @@ impl<'a> Line<'a> {
                 let rule = pair.as_rule();
                 let mut inner = pair.into_inner().peekable();
                 let kind = match rule {
-                    Rule::bold => modifier_span(Modifier::BOLD, inner),
-                    Rule::italic => modifier_span(Modifier::ITALIC, inner),
-                    Rule::bold_italic => modifier_span(Modifier::ITALIC | Modifier::BOLD, inner),
-                    Rule::highlight => modifier_span(Modifier::HIGHLIGHT, inner),
-                    Rule::strikethrough => modifier_span(Modifier::STRIKETHROUGH, inner),
+                    Rule::bold => modifier_span(Modifiers::BOLD, inner),
+                    Rule::italic => modifier_span(Modifiers::ITALIC, inner),
+                    Rule::bold_italic => modifier_span(Modifiers::ITALIC | Modifiers::BOLD, inner),
+                    Rule::highlight => modifier_span(Modifiers::HIGHLIGHT, inner),
+                    Rule::strikethrough => modifier_span(Modifiers::STRIKETHROUGH, inner),
                     Rule::text | Rule::text_wrapped => I::Text,
                     Rule::escaped_char => I::EscapedChar,
                     Rule::inline_code_block => I::InlineCodeBlock {
@@ -258,15 +258,15 @@ impl<'a> Line<'a> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct LineItem<'a> {
     pub span: Span<'a>,
     pub kind: LineItemKind<'a>
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum LineItemKind<'a> {
-    ModifierSpan(Modifier, Line<'a>),
+    ModifierSpan(Modifiers, Line<'a>),
     Text,
     InlineCodeBlock {
         inner: Span<'a>
@@ -301,7 +301,7 @@ pub enum LineItemKind<'a> {
 
 bitflags! {
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    pub struct Modifier: u8 {
+    pub struct Modifiers: u8 {
         const BOLD = 1 << 0;
         const ITALIC = 1 << 1;
         const HIGHLIGHT = 1 << 2;
@@ -309,7 +309,7 @@ bitflags! {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum Subtarget<'a> {
     None,
     Heading(Span<'a>),

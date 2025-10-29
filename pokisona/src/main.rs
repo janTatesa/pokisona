@@ -1,23 +1,28 @@
 mod app;
-mod color;
 mod command;
 mod command_history;
+mod config;
 mod file_store;
 mod markdown_store;
 mod markdown_view;
+mod widget;
 mod window;
 
-use std::path::PathBuf;
+use std::{fs, path::PathBuf};
 
 use clap::{ArgAction, Parser, Subcommand, command};
 use color_eyre::{Result, eyre::OptionExt};
 
-use crate::app::Pokisona;
+use crate::{app::Pokisona, config::Config};
 
 #[derive(Parser)]
 struct Cli {
     #[command(subcommand)]
-    subcommand: Option<VaultCommand>
+    subcommand: Option<VaultCommand>,
+    #[arg(long, action = ArgAction::SetTrue)]
+    use_default_config: bool,
+    #[arg(long)]
+    file: Option<PathBuf>
 }
 
 #[derive(Subcommand)]
@@ -25,8 +30,7 @@ enum VaultCommand {
     Open {
         name: String,
         #[arg(long, action = ArgAction::SetTrue)]
-        set_default: bool,
-        file: Option<PathBuf>
+        set_default: bool
     },
     Delete {
         name: String
@@ -37,39 +41,41 @@ fn main() -> Result<()> {
     color_eyre::install()?;
     let mut path = dirs::data_dir().ok_or_eyre("Cannot determine data dir")?;
     path.push("pokisona");
-
-    let (vault_name, initial_file) = match Cli::parse().subcommand {
+    fs::create_dir_all(&path)?;
+    let cli = Cli::parse();
+    let vault_name = match cli.subcommand {
         Some(VaultCommand::Open {
             name,
-            set_default: true,
-            file
+            set_default: true
         }) => {
             path.push("default");
-            std::fs::write(&path, &name)?;
+            fs::write(&path, &name)?;
             path.pop();
-            (name, file)
+            name
         }
         Some(VaultCommand::Open {
             name,
-            set_default: false,
-            file
-        }) => (name, file),
+            set_default: false
+        }) => name,
         Some(VaultCommand::Delete { name }) => {
             // TODO: create a confirmation prompt
             path.push(name);
-            return Ok(std::fs::remove_dir(&path)?);
+            return Ok(fs::remove_dir(&path)?);
         }
         None => {
             path.push("default");
-            let name = std::fs::read_to_string(&path)?;
+            let name = fs::read_to_string(&path)?;
             path.pop();
-            (name, None)
+            name
         }
     };
 
-    path.extend(["vaults", &vault_name]);
-
-    std::fs::create_dir_all(&path)?;
-    Pokisona::run(vault_name, path, initial_file)?;
+    path.extend(["vaults", &vault_name, ".pokisona"]);
+    fs::create_dir_all(&path)?;
+    path.push("config.toml");
+    let config = Config::new(&path, cli.use_default_config)?;
+    path.pop();
+    path.pop();
+    Pokisona::run(vault_name, path, cli.file, config)?;
     Ok(())
 }

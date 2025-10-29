@@ -2,26 +2,28 @@ use std::{path::PathBuf, time::Duration};
 
 use color_eyre::Result;
 use iced::{
-    Alignment::End,
-    Background, Border, Color, Element, Event,
-    Length::Fill,
-    Task, Theme, event, exit,
-    keyboard::{self, Key, Modifiers, key::Named},
-    widget::{Id, Sensor, column, container, operation::focus, row, text, text_input}
+    Alignment::{self},
+    Element, Event, Task, event, exit,
+    widget::{Id, operation::focus},
+    window
 };
 use smol::{Timer, fs};
-use strum_macros::IntoStaticStr;
 
 use crate::{
-    color::CRUST,
+    column,
     command::{Command, CommandKind},
     command_history::CommandHistory,
+    config::{Config, Keybinding},
     file_store::FILE_STORE,
     markdown_store::MarkdownStore,
+    row,
+    widget::{ContainerKind, Spacing, Theme, Widget},
     window::{Window, WindowManager}
 };
 
 pub struct Pokisona {
+    config: Config,
+
     vault_name: String,
     vault_path: PathBuf,
     window_manager: WindowManager,
@@ -38,10 +40,10 @@ pub struct Pokisona {
 #[derive(Debug, Clone)]
 pub enum Message {
     InitialFileOpen(PathBuf),
-    TypeCommand(String),
-    SubmitCommand,
-    CommandInputSpawned,
-    UncapturedIcedEvent(Event),
+    Type(TextInputId, String),
+    Submit(TextInputId),
+    Focus(Id),
+    KeyEvent(Keybinding),
     ClearError(u64),
     FileOpened {
         path: PathBuf,
@@ -51,36 +53,43 @@ pub enum Message {
 }
 
 impl Message {
-    fn from_iced_event(event: Event, status: event::Status, _: iced::window::Id) -> Option<Self> {
-        match status {
-            event::Status::Ignored => Some(Self::UncapturedIcedEvent(event)),
-            event::Status::Captured => None
+    fn from_iced_event(event: Event, _: event::Status, _: window::Id) -> Option<Self> {
+        if let Event::Keyboard(event) = event
+            && let Some(keybinding) = Keybinding::from_iced_key_event(event)
+        {
+            return Some(Self::KeyEvent(keybinding));
         }
+
+        None
     }
 }
 
-#[derive(IntoStaticStr)]
-enum ElementId {
+#[derive(Debug, Clone, Copy)]
+pub enum TextInputId {
     CommandInput
 }
 
-impl From<ElementId> for Id {
-    fn from(val: ElementId) -> Self {
-        Self::new(val.into())
+impl From<TextInputId> for Id {
+    fn from(val: TextInputId) -> Self {
+        Self::new(match val {
+            TextInputId::CommandInput => "command-input"
+        })
     }
 }
 
 impl Pokisona {
-    const DEFAULT_SCALE: f32 = 1.5;
+    const DEFAULT_SCALE: f32 = 1.;
     pub fn run(
         vault_name: String,
         path: PathBuf,
-        initial_file: Option<PathBuf>
+        initial_file: Option<PathBuf>,
+        config: Config
     ) -> Result<(), iced::Error> {
         iced::application(
             move || {
                 (
                     Self {
+                        config: config.clone(),
                         vault_name: vault_name.clone(),
                         vault_path: path.clone(),
                         window_manager: WindowManager::default(),
@@ -106,7 +115,7 @@ impl Pokisona {
     }
 
     fn theme(&self) -> Theme {
-        Theme::CatppuccinMocha
+        self.config.theme
     }
 
     fn open_file(&mut self, path: PathBuf) -> Task<Message> {
@@ -138,7 +147,7 @@ impl Pokisona {
 
     fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
-            Message::TypeCommand(command) => {
+            Message::Type(TextInputId::CommandInput, command) => {
                 self.command_history.deselect();
                 self.typed_command = Some(command)
             }
@@ -153,7 +162,7 @@ impl Pokisona {
                 return self
                     .display_error(format!("Cannot open {}: {error}", path.to_string_lossy()));
             }
-            Message::SubmitCommand => {
+            Message::Submit(TextInputId::CommandInput) => {
                 if self.typed_command.as_ref().unwrap().is_empty() {
                     return Task::none();
                 }
@@ -171,61 +180,28 @@ impl Pokisona {
                 self.command_history.push(typed_command);
                 return self.handle_command(command);
             }
-            Message::CommandInputSpawned => return focus(ElementId::CommandInput),
-            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
-                modified_key: Key::Character(char),
-                ..
-            })) if char == ":" && self.typed_command.is_none() => {
-                self.typed_command = Some(String::new())
-            }
-            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
-                modified_key: Key::Named(Named::Escape),
-                modifiers,
-                ..
-            })) if modifiers == Modifiers::empty() => {
-                self.command_history.deselect();
-                self.typed_command = None
-            }
+            Message::Focus(id) => return focus(id),
             Message::ClearError(id) if self.error_id == id => self.error = None,
             Message::ClearError(_) => {}
-            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
-                key: Key::Named(Named::ArrowUp),
-                modifiers,
-                ..
-            })) => self.command_history.select_up(),
-            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyReleased {
-                key: Key::Named(Named::ArrowDown),
-                ..
-            })) => self.command_history.select_down(),
-            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyPressed {
-                modified_key: Key::Character(char),
-                modifiers: Modifiers::CTRL,
-                ..
-            })) if char == "+" => self.scale += 0.1,
-            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyPressed {
-                modified_key: Key::Character(char),
-                modifiers: Modifiers::CTRL,
-                ..
-            })) if char == "-" => self.scale -= 0.5,
-            Message::UncapturedIcedEvent(Event::Keyboard(keyboard::Event::KeyPressed {
-                modified_key: Key::Character(char),
-                modifiers: Modifiers::CTRL,
-                ..
-            })) if char == "0" => self.scale = Self::DEFAULT_SCALE,
-            Message::UncapturedIcedEvent(_) => {}
+
             Message::InitialFileOpen(path) => {
                 return self.handle_command(Command {
                     _force: false,
                     kind: CommandKind::Open { path }
                 });
             }
+            Message::KeyEvent(event) => {
+                if let Some(command) = self.config.keybindings.get(&event) {
+                    return self.handle_command(command.clone());
+                }
+            }
         }
 
         Task::none()
     }
 
-    // TODO: Stupid app has for some reason a big break on command submit
     fn handle_command(&mut self, command: Command) -> Task<Message> {
+        let scale = self.config.scale;
         match command.kind {
             CommandKind::Quit => {
                 if self.window_manager.remove_window().is_none() {
@@ -246,51 +222,50 @@ impl Pokisona {
                 };
             }
             CommandKind::NextSplit => self.window_manager.next_window(),
-            CommandKind::PreviousSplit => self.window_manager.previous_window()
+            CommandKind::PreviousSplit => self.window_manager.previous_window(),
+            CommandKind::ScaleUp => self.scale += scale.default_step,
+            CommandKind::ScaleDown => self.scale -= scale.default_step,
+            CommandKind::ScaleReset => self.scale = scale.default,
+            CommandKind::HistoryUp => self.command_history.select_up(),
+            CommandKind::HistoryDown => self.command_history.select_down(),
+            CommandKind::CommandModeOpen => self.typed_command = Some(String::new()),
+            CommandKind::Noop => {}
+            CommandKind::CommandModeExit => self.typed_command = None
         }
 
         Task::none()
     }
 
-    pub const BORDER_RADIUS: f32 = 5.;
-    pub const BORDER_WIDTH: f32 = 2.5;
-    pub const FONT_SIZE: f32 = 16.;
-    pub const PADDING: f32 = 5.0;
-    pub const SMOL_FONT_SIZE: f32 = 10.0;
-    fn view(&self) -> Element<'_, Message> {
-        let vault_name = container(self.vault_name.as_str())
-            .width(Fill)
-            .align_x(End)
-            .into();
+    fn view(&self) -> Element<'_, Message, Theme> {
+        let vault_name = Widget::container(
+            self.vault_name.as_str(),
+            ContainerKind::Aligned {
+                horizontal: Some(Alignment::End),
+                vertical: None
+            }
+        );
 
-        let bar_content: Element<'_, Message> = match (
+        let bar_content = match (
             self.command_history.currently_selected(),
             self.typed_command.as_deref(),
             &self.error
         ) {
-            (Some(command), ..) | (_, Some(command), _) => {
-                let text_input = text_input("Enter command", command)
-                    .on_input(Message::TypeCommand)
-                    .on_submit(Message::SubmitCommand)
-                    .style(|theme, status| {
-                        let mut style = text_input::default(theme, status);
-                        style.border = Border::default();
-                        style.background = Background::Color(Color::TRANSPARENT);
-                        style
-                    })
-                    .id(ElementId::CommandInput)
-                    .padding(0);
-                let sensored = Sensor::new(text_input).on_show(|_| Message::CommandInputSpawned);
-                row![":", sensored, vault_name].into()
-            }
-            (_, _, Some(error)) => row![text(error).style(text::danger), vault_name].into(),
+            (Some(command), ..) | (_, Some(command), _) => row![
+                Spacing::None,
+                ":",
+                Widget::TextInput {
+                    content: command,
+                    placeholder: "Enter command",
+                    id: TextInputId::CommandInput
+                },
+                vault_name
+            ],
+            (_, _, Some(error)) => row![Spacing::None, Widget::Error(error.into()), vault_name],
             _ => vault_name
         };
 
-        let bar = container(bar_content)
-            .style(|_| container::background(CRUST))
-            .width(Fill);
-        let windows = container(self.window_manager.render()).padding(Self::PADDING);
-        column![windows, bar].into()
+        let bar = Widget::container(bar_content, ContainerKind::Bar);
+        let windows = self.window_manager.render();
+        column![Spacing::None, windows, bar].render(self.theme())
     }
 }

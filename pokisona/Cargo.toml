@@ -2,17 +2,22 @@
 name = "pokisona"
 version = "0.1.0"
 edition = "2024"
-
 [dependencies]
 clap = { version = "4.5.48", features = ["cargo", "derive"] }
 color-eyre = "0.6.5"
 dirs = "6.0.0"
-pokisona-markdown.workspace  = true
-strum = "0.27.2"
-strum_macros = "0.27.2"
-iced = { git = "https://github.com/iced-rs/iced", features = ["smol", "debug"] }
-catppuccin = "2.5.1"
+pokisona-markdown.workspace = true
+iced = { git = "https://github.com/iced-rs/iced", features = [
+  "smol",
+  "advanced",
+  "wgpu",
+  "crisp",
+  "thread-pool",
+], default-features = false }
 smol = "2.0.2"
 dashmap = "6.1.0"
 itertools.workspace = true
 either = "1.15.0"
+serde = { version = "1.0.228", features = ["derive"] }
+figment = { version = "0.10.19", features = ["toml"] }
+catppuccin = "2.6.0"

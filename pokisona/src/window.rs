@@ -4,17 +4,12 @@ use std::{
     sync::Arc
 };
 
-use iced::{
-    Background, Border, Element,
-    Length::Fill,
-    widget::{column, container, row, scrollable, space}
-};
-
 use crate::{
-    app::{Message, Pokisona},
-    color::{ACCENT, CRUST, MANTLE},
+    column,
     file_store::FileData,
-    markdown_view::render_markdown
+    markdown_view::render_markdown,
+    row,
+    widget::{ContainerKind, Spacing, Widget}
 };
 
 #[derive(Clone)]
@@ -60,7 +55,7 @@ impl WindowManager {
         Some(window)
     }
 
-    pub fn render(&self) -> Element<'_, Message> {
+    pub fn render(&self) -> Widget<'_> {
         self.root_node.render(self.current_window)
     }
 
@@ -91,69 +86,42 @@ enum Direction {
 }
 
 impl WindowLayoutNode {
-    fn render(&self, focused_idx: usize) -> Element<'_, Message> {
+    fn render(&self, focused_idx: usize) -> Widget<'_> {
         match self {
-            WindowLayoutNode::Window(window) => window.render(),
-            WindowLayoutNode::Split(_) => self.render_nested(Some(focused_idx), Direction::Vertical)
+            WindowLayoutNode::Window(window) => {
+                Widget::container(window.render(), ContainerKind::Padded)
+            }
+            WindowLayoutNode::Split(_) => Widget::container(
+                self.render_nested(Some(focused_idx), Direction::Vertical),
+                ContainerKind::Mantle
+            )
         }
     }
 
-    // TODO: Here's a lot of repeated code
-    fn render_nested(
-        &self,
-        focused_idx: Option<usize>,
-        direction: Direction
-    ) -> Element<'_, Message> {
+    fn render_nested(&self, focused_idx: Option<usize>, direction: Direction) -> Widget<'_> {
         match (self, focused_idx, direction) {
-            (WindowLayoutNode::Window(window), Some(0), _) => container(window.render())
-                .style(|_| {
-                    container::Style::default()
-                        .border(
-                            Border::default()
-                                .rounded(Pokisona::BORDER_RADIUS)
-                                .width(Pokisona::BORDER_WIDTH)
-                                .color(ACCENT)
-                        )
-                        .background(Background::Color(MANTLE))
-                })
-                .width(Fill)
-                .height(Fill)
-                .into(),
-            (WindowLayoutNode::Window(window), ..) => container(window.render())
-                .style(|_| {
-                    container::Style::default()
-                        .border(Border::default().rounded(Pokisona::BORDER_RADIUS))
-                        .background(Background::Color(CRUST))
-                })
-                .width(Fill)
-                .height(Fill)
-                .into(),
-            (WindowLayoutNode::Split(nodes), _, Direction::Horizontal) => container(
-                column![
-                    nodes.0.render_nested(focused_idx, Direction::Vertical),
-                    nodes.1.render_nested(
-                        focused_idx.and_then(|idx| idx.checked_sub(nodes.0.len())),
-                        Direction::Vertical
-                    )
-                ]
-                .spacing(Pokisona::PADDING)
-            )
-            .width(Fill)
-            .height(Fill)
-            .into(),
-            (WindowLayoutNode::Split(nodes), _, Direction::Vertical) => container(
-                row![
-                    nodes.0.render_nested(focused_idx, Direction::Horizontal),
-                    nodes.1.render_nested(
-                        focused_idx.and_then(|idx| idx.checked_sub(nodes.0.len())),
-                        Direction::Horizontal
-                    )
-                ]
-                .spacing(Pokisona::PADDING)
-            )
-            .width(Fill)
-            .height(Fill)
-            .into()
+            (WindowLayoutNode::Window(window), Some(0), _) => {
+                Widget::container(window.render(), ContainerKind::BorderedBoxFocused)
+            }
+            (WindowLayoutNode::Window(window), ..) => {
+                Widget::container(window.render(), ContainerKind::BorderedBox)
+            }
+            (WindowLayoutNode::Split(nodes), _, Direction::Horizontal) => column![
+                Spacing::Normal,
+                nodes.0.render_nested(focused_idx, Direction::Vertical),
+                nodes.1.render_nested(
+                    focused_idx.and_then(|idx| idx.checked_sub(nodes.0.len())),
+                    Direction::Vertical
+                )
+            ],
+            (WindowLayoutNode::Split(nodes), _, Direction::Vertical) => row![
+                Spacing::Normal,
+                nodes.0.render_nested(focused_idx, Direction::Horizontal),
+                nodes.1.render_nested(
+                    focused_idx.and_then(|idx| idx.checked_sub(nodes.0.len())),
+                    Direction::Horizontal
+                )
+            ]
         }
     }
 
@@ -259,23 +227,13 @@ pub enum Window {
 }
 
 impl Window {
-    fn render(&self) -> Element<'_, Message> {
-        let content: Element<'_, Message> = match self {
-            Window::Empty => space().into(),
+    fn render(&self) -> Widget<'_> {
+        match self {
+            Window::Empty => Widget::Space,
             Window::Markdown(file_data) => file_data
                 .content()
                 .map(|content| render_markdown(content.markdown()))
                 .into()
-        };
-
-        container(scrollable(content).style(|theme, status| {
-            let mut style = scrollable::default(theme, status);
-            style.vertical_rail.scroller.color = ACCENT;
-            style
-        }))
-        .width(Fill)
-        .height(Fill)
-        .padding(Pokisona::PADDING)
-        .into()
+        }
     }
 }
