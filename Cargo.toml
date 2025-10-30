@@ -1,14 +1,28 @@
-[workspace]
-members = ["pokisona", "pokisona-markdown"]
-default-members = ["pokisona"]
-resolver = "3"
-
-[workspace.package]
+[package]
+name = "pokisona"
 version = "0.1.0"
 edition = "2024"
 
-[workspace.dependencies]
-pokisona-markdown.path = "./pokisona-markdown"
+[dependencies]
 yoke = { version = "0.8.0", features = ["derive"] }
 # TODO: switch back to crates.io itertools when https://github.com/rust-itertools/itertools/pull/1071 is merged
+catppuccin = "2.6.0"
 itertools = { git = "https://github.com/janTatesa/itertools", branch = "add_peeking_map_while" }
+iced_selection.git = "https://git.sr.ht/~pml68/iced_selection"
+iced = { git = "https://github.com/iced-rs/iced", features = [
+  "smol",
+  "advanced",
+  "wgpu",
+  "crisp",
+  "thread-pool",
+], default-features = false, branch = "master" }
+serde = { version = "1.0.228", features = ["derive"] }
+clap = { version = "4.5.48", features = ["cargo", "derive"] }
+color-eyre = "0.6.5"
+dirs = "6.0.0"
+smol = "2.0.2"
+dashmap = "6.1.0"
+figment = { version = "0.10.19", features = ["toml"] }
+pest_derive = { version = "2.8.3", features = ["grammar-extras"] }
+pest = "2.8.3"
+bitflags = "2.10.0"

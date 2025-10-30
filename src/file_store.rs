@@ -6,7 +6,7 @@ use std::{
 
 use dashmap::DashMap;
 
-use crate::markdown_store::MarkdownStore;
+use crate::markdown::MarkdownStore;
 
 pub static FILE_STORE: LazyLock<FileStore> = LazyLock::new(FileStore::default);
 #[derive(Default, Debug)]

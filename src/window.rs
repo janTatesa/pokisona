@@ -7,11 +7,9 @@ use std::{
 use crate::{
     column,
     file_store::FileData,
-    markdown_view::render_markdown,
     row,
     widget::{ContainerKind, Spacing, Widget}
 };
-
 #[derive(Clone)]
 pub struct WindowManager {
     root_node: WindowLayoutNode,
@@ -232,7 +230,7 @@ impl Window {
             Window::Empty => Widget::Space,
             Window::Markdown(file_data) => file_data
                 .content()
-                .map(|content| render_markdown(content.markdown()))
+                .map(|content| content.inner().render())
                 .into()
         }
     }

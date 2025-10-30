@@ -15,12 +15,11 @@ use crate::{
     command_history::CommandHistory,
     config::{Config, Keybinding},
     file_store::FILE_STORE,
-    markdown_store::MarkdownStore,
+    markdown::Markdown,
     row,
     widget::{ContainerKind, Spacing, Theme, Widget},
     window::{Window, WindowManager}
 };
-
 pub struct Pokisona {
     config: Config,
 
@@ -40,7 +39,7 @@ pub struct Pokisona {
 #[derive(Debug, Clone)]
 pub enum Message {
     InitialFileOpen(PathBuf),
-    Type(TextInputId, String),
+    Edit(TextInputId, String),
     Submit(TextInputId),
     Focus(Id),
     KeyEvent(Keybinding),
@@ -147,14 +146,14 @@ impl Pokisona {
 
     fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
-            Message::Type(TextInputId::CommandInput, command) => {
+            Message::Edit(TextInputId::CommandInput, command) => {
                 self.command_history.deselect();
                 self.typed_command = Some(command)
             }
             Message::FileOpened {
                 path,
                 content: Ok(source)
-            } => FILE_STORE.insert(&path, MarkdownStore::new(source)),
+            } => FILE_STORE.insert(&path, Markdown::new(source)),
             Message::FileOpened {
                 path,
                 content: Err(error)

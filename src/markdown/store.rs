@@ -5,7 +5,7 @@ use std::{
     ptr::NonNull
 };
 
-use pokisona_markdown::Markdown;
+use crate::markdown::Markdown;
 
 pub struct MarkdownStore {
     markdown: ManuallyDrop<Markdown<'static>>,
@@ -13,8 +13,8 @@ pub struct MarkdownStore {
 }
 
 impl MarkdownStore {
-    pub fn new(source: String) -> Self {
-        let source = source.leak();
+    pub(super) fn new(input: String) -> Self {
+        let source = input.leak();
         let source_ptr = NonNull::from_mut(source);
         let markdown = ManuallyDrop::new(Markdown::parse(source));
         Self {
@@ -23,7 +23,7 @@ impl MarkdownStore {
         }
     }
 
-    pub fn markdown<'a>(&'a self) -> &'a Markdown<'a> {
+    pub fn inner<'a>(&'a self) -> &'a Markdown<'a> {
         &self.markdown
     }
 }

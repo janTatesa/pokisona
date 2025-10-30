@@ -1,7 +1,6 @@
 use catppuccin::{PALETTE, Rgb};
 use iced::{
     Background, Border, Color,
-    border::Radius,
     theme::{Base, Mode, Palette, Style},
     widget::{
         container,
@@ -9,7 +8,10 @@ use iced::{
         text, text_input
     }
 };
+use iced_selection::text as selection_text;
 use serde::Deserialize;
+
+use super::{ALPHA, BORDER_RADIUS};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
@@ -95,7 +97,7 @@ macro_rules! catalog {
             type Class<'a> = $widget::StyleFn<'a, Self>;
 
             fn default<'a>() -> Self::Class<'a> {
-                Box::new(|_| $style)
+                Box::new($style)
             }
 
             fn style(&self, class: &Self::Class<'_>) -> $widget::Style {
@@ -108,7 +110,7 @@ macro_rules! catalog {
             type Class<'a> = $widget::StyleFn<'a, Self>;
 
             fn default<'a>() -> Self::Class<'a> {
-                Box::new(|_, _| $style)
+                Box::new($style)
             }
 
             fn style(&self, class: &Self::Class<'_>, status: $status) -> $widget::Style {
@@ -118,30 +120,30 @@ macro_rules! catalog {
     };
 }
 
-// TODO: maybe actually use those default styles
-catalog!(container, container::Style::default());
-catalog!(text, text::Style::default());
-catalog!(
-    text_input,
-    text_input::Status,
+catalog!(container, |_| container::Style::default());
+catalog!(text, |_| text::Style::default());
+catalog!(selection_text, |theme| selection_text::Style {
+    color: None,
+    selection: theme.accent.scale_alpha(ALPHA)
+});
+
+catalog!(text_input, text_input::Status, |theme, _| {
     text_input::Style {
-        background: Background::Color(Color::TRANSPARENT),
+        background: Background::Color(theme.crust),
         border: Border::default(),
-        placeholder: Color::TRANSPARENT,
-        value: Color::TRANSPARENT,
-        selection: Color::TRANSPARENT,
+        placeholder: theme.subtext1,
+        value: theme.text,
+        selection: theme.accent.scale_alpha(ALPHA),
         icon: Color::TRANSPARENT
     }
-);
-catalog!(
-    rule,
-    rule::Style {
-        color: Color::TRANSPARENT,
-        radius: Radius::default(),
-        fill_mode: FillMode::Full,
-        snap: false
-    }
-);
+});
+
+catalog!(rule, |theme| rule::Style {
+    color: theme.accent,
+    radius: BORDER_RADIUS.into(),
+    fill_mode: FillMode::Full,
+    snap: false
+});
 
 impl ThemeConfig {
     pub fn theme(&self) -> Theme {

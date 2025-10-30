@@ -3,46 +3,48 @@ use std::{
     slice
 };
 
-use either::Either;
-use itertools::{Itertools, put_back};
-use pokisona_markdown::{Block, BlockKind, Line, LineItem, Markdown, Modifiers};
+use itertools::{Either, Itertools, put_back};
 
-use crate::widget::{Spacing, Span, Widget};
-
-pub fn render_markdown<'a>(markdown: &'a Markdown<'a>) -> Widget<'a> {
-    let iter = markdown
-        .yaml
-        .as_ref()
-        .map(|_| Widget::NotYetSupported)
-        .into_iter()
-        .chain(markdown.content.iter().map(render_block));
-    Widget::column(Spacing::Normal, iter)
+use super::{Block, BlockKind, Line, LineItem, Markdown};
+use crate::widget::{Modifiers, Spacing, Span, Widget};
+impl<'a> Markdown<'a> {
+    pub fn render(&'a self) -> Widget<'a> {
+        let iter = self
+            .yaml
+            .as_ref()
+            .map(|_| Widget::NotYetSupported)
+            .into_iter()
+            .chain(self.content.iter().map(Block::render));
+        Widget::column(Spacing::Normal, iter)
+    }
 }
 
-fn render_block<'a>(block: &'a Block<'a>) -> Widget<'a> {
-    match &block.kind {
-        BlockKind::Line(line) => Widget::row(
-            Spacing::Normal,
-            LineItemIterWrapper(LineItemIter::new(line, Modifiers::empty()).peekable())
-        ),
-        BlockKind::Code { .. }
-        | BlockKind::ListItem(_)
-        | BlockKind::Quote { .. }
-        | BlockKind::Callout { .. }
-        | BlockKind::Math { .. } => Widget::NotYetSupported,
-        BlockKind::Heading {
-            nesting,
-            title,
-            content,
-            ..
-        } => Widget::Heading {
-            title: LineItemIterWrapper(LineItemIter::new(title, Modifiers::empty()).peekable())
-                .collect(),
-            content: content.iter().map(render_block).collect(),
-            nesting: *nesting
-        },
-        BlockKind::Ruler => Widget::Separator,
-        BlockKind::Comment { .. } => Widget::Space
+impl<'a> Block<'a> {
+    fn render(&'a self) -> Widget<'a> {
+        match &self.kind {
+            BlockKind::Line(line) => Widget::row(
+                Spacing::Normal,
+                LineItemIterWrapper(LineItemIter::new(line, Modifiers::empty()).peekable())
+            ),
+            BlockKind::Code { .. }
+            | BlockKind::ListItem(_)
+            | BlockKind::Quote { .. }
+            | BlockKind::Callout { .. }
+            | BlockKind::Math { .. } => Widget::NotYetSupported,
+            BlockKind::Heading {
+                nesting,
+                title,
+                content,
+                ..
+            } => Widget::Heading {
+                title: LineItemIterWrapper(LineItemIter::new(title, Modifiers::empty()).peekable())
+                    .collect(),
+                content: content.iter().map(Self::render).collect(),
+                nesting: *nesting
+            },
+            BlockKind::Ruler => Widget::Separator,
+            BlockKind::Comment { .. } => Widget::Space
+        }
     }
 }
 
@@ -86,7 +88,7 @@ impl<'a> Iterator for LineItemIter<'a> {
     type Item = Either<Span<'a>, Widget<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        use pokisona_markdown::LineItemKind as I;
+        use super::LineItemKind as I;
         if let Some(widget) = self.nested.as_mut().and_then(|iter| iter.next()) {
             return Some(widget);
         }
@@ -103,7 +105,13 @@ impl<'a> Iterator for LineItemIter<'a> {
                     text: line_item.span.as_str().into()
                 }));
             }
-            I::InlineCodeBlock { inner } => Widget::InlineCode(inner.as_str()),
+            I::InlineCodeBlock { inner } => {
+                return Some(Either::Left(Span {
+                    modifiers: self.modifiers | Modifiers::CODE,
+                    text: inner.as_str().into()
+                }));
+            }
+
             I::InlineMathBlock { inner } => Widget::InlineMath(inner.as_str()),
             I::SoftBreak
             | I::EscapedChar
@@ -111,8 +119,20 @@ impl<'a> Iterator for LineItemIter<'a> {
             | I::ExternalLink { .. }
             | I::ExternalEmbed { .. }
             | I::Embed { .. } => Widget::NotYetSupported,
-            I::Tag => Widget::Tag(line_item.span.as_str()),
-            I::Reference => Widget::Reference(line_item.span.as_str()),
+            I::Tag => {
+                return Some(Either::Left(Span {
+                    modifiers: self.modifiers | Modifiers::TAG,
+                    text: line_item.span.as_str().into()
+                }));
+            }
+
+            I::Reference => {
+                return Some(Either::Left(Span {
+                    modifiers: self.modifiers | Modifiers::REFERENCE,
+                    text: line_item.span.as_str().into()
+                }));
+            }
+
             I::Comment => Widget::Space
         };
 

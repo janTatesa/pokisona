@@ -1,11 +1,18 @@
-use bitflags::bitflags;
+#![allow(dead_code)]
+mod store;
+mod view;
+
 use itertools::{Itertools, PeekingNext};
 use pest::{Parser, Span, iterators::Pair};
 use pest_derive::Parser;
 use yoke::Yokeable;
 
+pub use crate::markdown::store::MarkdownStore;
+use crate::widget::Modifiers;
+
+// TODO: it would be better to use chumsky as this parser is pretty slow
 #[derive(Parser)]
-#[grammar = "../markdown.pest"]
+#[grammar = "./markdown/markdown.pest"]
 struct MarkdownParser;
 
 #[derive(Debug, Default, Yokeable)]
@@ -14,9 +21,13 @@ pub struct Markdown<'a> {
     pub content: Vec<Block<'a>>
 }
 
-pub const MAX_HEADING_NESTING: u8 = 6;
 impl<'a> Markdown<'a> {
-    pub fn parse(input: &'a str) -> Self {
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new(input: String) -> MarkdownStore {
+        MarkdownStore::new(input)
+    }
+
+    fn parse(input: &'a str) -> Self {
         let mut pairs = MarkdownParser::parse(Rule::main, input)
             .expect("Parsing markdown should be infallible")
             .peekable();
@@ -297,16 +308,6 @@ pub enum LineItemKind<'a> {
     Tag,
     Reference,
     Comment
-}
-
-bitflags! {
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    pub struct Modifiers: u8 {
-        const BOLD = 1 << 0;
-        const ITALIC = 1 << 1;
-        const HIGHLIGHT = 1 << 2;
-        const STRIKETHROUGH = 1 << 3;
-    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

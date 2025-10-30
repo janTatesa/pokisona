@@ -3,14 +3,13 @@ mod command;
 mod command_history;
 mod config;
 mod file_store;
-mod markdown_store;
-mod markdown_view;
+mod markdown;
 mod widget;
 mod window;
 
 use std::{fs, path::PathBuf};
 
-use clap::{ArgAction, Parser, Subcommand, command};
+use clap::{ArgAction, Parser, Subcommand};
 use color_eyre::{Result, eyre::OptionExt};
 
 use crate::{app::Pokisona, config::Config};
