@@ -110,13 +110,17 @@ impl WindowManager {
 
     pub fn render(&self, theme: Theme) -> Element<'_> {
         if let WindowLayoutNode::Window(window) = &self.root_node {
-            return window.render(theme);
+            return container(window.render(theme))
+                .color(theme.base)
+                .border(BorderType::Invisible)
+                .stretched()
+                .into();
         }
 
         let content =
             self.root_node
                 .render(Some(self.current_window), self.starting_direction, theme);
-        container(content).color(theme.mantle).stretched().into()
+        container(content).stretched().into()
     }
 
     #[allow(dead_code)]
@@ -155,16 +159,20 @@ impl WindowLayoutNode {
         theme: Theme
     ) -> Element<'_> {
         match (self, focused_idx, direction) {
-            (WindowLayoutNode::Window(window), Some(0), _) => container(window.render(theme))
-                .border(BorderType::Focused)
-                .color(theme.base)
-                .stretched()
-                .into(),
-            (WindowLayoutNode::Window(window), ..) => container(window.render(theme))
-                .border(BorderType::Normal)
-                .color(theme.base)
-                .stretched()
-                .into(),
+            (WindowLayoutNode::Window(window), Some(0), _) => {
+                container(container(window.render(theme)).padded())
+                    .border(BorderType::Focused)
+                    .color(theme.base)
+                    .stretched()
+                    .into()
+            }
+            (WindowLayoutNode::Window(window), ..) => {
+                container(container(window.render(theme)).padded())
+                    .border(BorderType::Invisible)
+                    .color(theme.base)
+                    .stretched()
+                    .into()
+            }
             (WindowLayoutNode::Split(nodes), _, Direction::Horizontal) => Column::from_iter(
                 NodeIter {
                     i: nodes.iter(),

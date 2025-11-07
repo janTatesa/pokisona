@@ -87,7 +87,6 @@ impl From<ElementId> for Id {
 }
 
 impl Pokisona {
-    const DEFAULT_SCALE: f32 = 1.;
     pub fn run(
         vault_name: String,
         initial_file: Option<PathBuf>,
@@ -108,7 +107,7 @@ impl Pokisona {
                     error: None,
                     error_id: 0,
                     command_history: CommandHistory::default(),
-                    scale: Self::DEFAULT_SCALE,
+                    scale: config.scale.default,
                     hovered_link: None
                 };
 
@@ -356,13 +355,10 @@ impl Pokisona {
             Some(container(element).padded())
         });
 
-        let hovered_link = container(
-            container(hovered_link)
-                .color(theme.crust)
-                .border(BorderType::Normal)
-        )
-        .align_y(Alignment::End)
-        .stretched();
+        let hovered_link = container(hovered_link)
+            .color(theme.base)
+            .border(BorderType::Normal);
+        let hovered_link = container(hovered_link).align_y(Alignment::End).stretched();
 
         let windows = container(self.window_manager.render(self.theme())).stretched();
         let ui = container(stack![windows, hovered_link])

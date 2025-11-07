@@ -80,7 +80,7 @@ impl Base for Theme {
 
     fn base(&self) -> Style {
         Style {
-            background_color: self.base,
+            background_color: self.crust,
             text_color: self.text
         }
     }

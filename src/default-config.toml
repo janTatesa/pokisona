@@ -5,7 +5,7 @@ flavor = "mocha"
 accent = "mauve"
 
 [scale]
-default = 1.5
+default = 2
 default_step = 0.2
 
 [keybindings]
