@@ -1,12 +1,14 @@
-// TODO:c this contains a lot of spaghetti
-
+// TODO:c this contains a lot of spaghetti, maybe use a modified version of iced's panegrid
 use std::{
     mem,
     ops::{Index, IndexMut},
     sync::Arc
 };
 
-use iced::widget::{Column, Row};
+use iced::{
+    Alignment, Length,
+    widget::{Column, Row, column}
+};
 
 use crate::{
     file_store::FileData,
@@ -110,11 +112,7 @@ impl WindowManager {
 
     pub fn render(&self, theme: Theme) -> Element<'_> {
         if let WindowLayoutNode::Window(window) = &self.root_node {
-            return container(window.render(theme))
-                .color(theme.base)
-                .border(BorderType::Invisible)
-                .stretched()
-                .into();
+            return window.render(theme, false);
         }
 
         let content =
@@ -159,20 +157,8 @@ impl WindowLayoutNode {
         theme: Theme
     ) -> Element<'_> {
         match (self, focused_idx, direction) {
-            (WindowLayoutNode::Window(window), Some(0), _) => {
-                container(container(window.render(theme)).padded())
-                    .border(BorderType::Focused)
-                    .color(theme.base)
-                    .stretched()
-                    .into()
-            }
-            (WindowLayoutNode::Window(window), ..) => {
-                container(container(window.render(theme)).padded())
-                    .border(BorderType::Invisible)
-                    .color(theme.base)
-                    .stretched()
-                    .into()
-            }
+            (WindowLayoutNode::Window(window), Some(0), _) => window.render(theme, true),
+            (WindowLayoutNode::Window(window), ..) => window.render(theme, false),
             (WindowLayoutNode::Split(nodes), _, Direction::Horizontal) => Column::from_iter(
                 NodeIter {
                     i: nodes.iter(),
@@ -358,13 +344,34 @@ pub enum Window {
 }
 
 impl Window {
-    fn render(&self, theme: Theme) -> Element<'_> {
-        match self {
-            Window::Empty => None,
-            Window::Markdown(file_data) => file_data
-                .content()
-                .map(|content| content.inner().render(theme))
-        }
-        .into()
+    fn render(&self, theme: Theme, focused: bool) -> Element<'_> {
+        let (main, bar) = match self {
+            Window::Empty => (None, "[scratch]"),
+            Window::Markdown(file_data) => (
+                file_data
+                    .content()
+                    .map(|content| content.inner().render(theme)),
+                file_data.path().as_str()
+            )
+        };
+
+        let bar = container(bar)
+            .align_x(Alignment::Center)
+            .border(BorderType::TitleBarBottom)
+            .color(theme.crust)
+            .width(Length::Fill);
+
+        let content = column![container(main).stretched().padded(), bar].clip(true);
+        let border = if focused {
+            BorderType::Focused
+        } else {
+            BorderType::Invisible
+        };
+
+        container(content)
+            .border(border)
+            .color(theme.base)
+            .stretched()
+            .into()
     }
 }

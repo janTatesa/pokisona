@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs, path::Path, str::FromStr};
+use std::{collections::HashMap, fs, str::FromStr};
 
 use color_eyre::eyre::Result;
 use figment::{
@@ -11,7 +11,7 @@ use iced::{
 };
 use serde::{Deserialize, Deserializer, de};
 
-use crate::{command::Command, theme::Theme};
+use crate::{Path, command::Command, theme::Theme};
 
 #[derive(Deserialize, Clone)]
 pub struct Config {

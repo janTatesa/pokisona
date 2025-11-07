@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use color_eyre::Result;
 use iced::{
@@ -10,6 +10,7 @@ use iced::{
 use smol::{Timer, fs};
 
 use crate::{
+    PathBuf,
     command::{Command, CommandKind},
     command_history::CommandHistory,
     config::{Config, Keybinding},
@@ -219,9 +220,7 @@ impl Pokisona {
             Message::Hover(link) => {
                 self.hovered_link = Some(match link {
                     Link::InvalidUrlExternal(raw) => HoveredLink::Error(raw),
-                    Link::NonExistentInternal(path) => {
-                        HoveredLink::Error(path.to_string_lossy().into_owned())
-                    }
+                    Link::NonExistentInternal(path) => HoveredLink::Error(path.into_string()),
                     Link::Internal(path) => {
                         let (data, task) = self.open_file(path);
                         self.hovered_link = Some(HoveredLink::Internal(data));

@@ -1,6 +1,5 @@
 use std::{
     iter::{self, Peekable},
-    path::PathBuf,
     slice,
     str::FromStr
 };
@@ -11,6 +10,7 @@ use url::Url;
 
 use super::{Block, BlockKind, Line, LineItem, Markdown};
 use crate::{
+    PathBuf,
     iced_helpers::{
         BORDER_WIDTH, Element, Link, Modifiers, SPACING, Span, not_yet_supported, rich_text
     },

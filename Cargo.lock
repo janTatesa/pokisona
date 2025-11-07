@@ -437,6 +437,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "camino"
+version = "1.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "276a59bf2b2c967788139340c9f0c5b12d7fd6630315c15c217e559de85d2609"
+
+[[package]]
 name = "catppuccin"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2420,6 +2426,7 @@ name = "pokisona"
 version = "0.1.0"
 dependencies = [
  "bitflags 2.10.0",
+ "camino",
  "catppuccin",
  "clap",
  "color-eyre",

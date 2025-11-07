@@ -1,3 +1,4 @@
+#![deny(clippy::disallowed_types)]
 mod app;
 mod command;
 mod command_history;
@@ -8,8 +9,9 @@ mod markdown;
 mod theme;
 mod window;
 
-use std::{env, fs, path::PathBuf};
+use std::{env, fs};
 
+use camino::{Utf8Path, Utf8PathBuf};
 use clap::{ArgAction, Parser, Subcommand};
 use color_eyre::{Result, eyre::OptionExt};
 
@@ -37,6 +39,8 @@ enum VaultCommand {
     }
 }
 
+pub type PathBuf = Utf8PathBuf;
+pub type Path = Utf8Path;
 fn main() -> Result<()> {
     color_eyre::install()?;
     let mut path = dirs::data_dir().ok_or_eyre("Cannot determine data dir")?;

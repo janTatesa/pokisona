@@ -1,12 +1,9 @@
 // TODO: switch to smth more robust
-use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, LazyLock, OnceLock, Weak}
-};
+use std::sync::{Arc, LazyLock, OnceLock, Weak};
 
 use dashmap::DashMap;
 
-use crate::markdown::MarkdownStore;
+use crate::{Path, PathBuf, markdown::MarkdownStore};
 
 // TODO: Maybe a leaked reference is better than a static
 pub static FILE_STORE: LazyLock<FileStore> = LazyLock::new(FileStore::default);

@@ -3,19 +3,20 @@
 //! An alternative would be to create fiunctions but that wouldn't be enforced
 //! Just like the rest of the project this is shitty and incomplete
 
-use std::{borrow::Cow, path::PathBuf};
+use std::borrow::Cow;
 
 use bitflags::bitflags;
 use iced::{
     Alignment, Background, Border, Color, Font, Length, Renderer, Shadow,
     advanced::widget::Text,
+    border::Radius,
     font::{self, Weight},
     widget
 };
 use iced_selection::text::{IntoFragment, Rich};
 use url::Url;
 
-use crate::{app::Message, theme::Theme};
+use crate::{PathBuf, app::Message, theme::Theme};
 
 pub type Element<'a> = iced::Element<'a, Message, Theme>;
 pub const SPACING: f32 = 5.0;
@@ -89,12 +90,13 @@ pub fn shadow(theme: Theme) -> Shadow {
 }
 
 pub const BORDER_WIDTH: f32 = 2.;
-pub const BORDER_RADIUS: f32 = 4.;
+pub const BORDER_RADIUS: f32 = 6.;
 #[derive(Clone, Copy)]
 pub enum BorderType {
     Focused,
     Normal,
     Invisible,
+    TitleBarBottom,
     None
 }
 
@@ -163,10 +165,13 @@ impl<'a> From<Container<'a>> for Element<'a> {
                         radius: BORDER_RADIUS.into()
                     },
                     BorderType::Invisible => Border::default().rounded(BORDER_RADIUS),
-                    BorderType::None => Border::default()
+                    BorderType::None => Border::default(),
+                    BorderType::TitleBarBottom => {
+                        Border::default().rounded(Radius::default().bottom(BORDER_RADIUS))
+                    }
                 },
                 shadow: match val.border {
-                    BorderType::None => Shadow::default(),
+                    BorderType::None | BorderType::TitleBarBottom => Shadow::default(),
                     _ => shadow(*theme)
                 },
                 snap: false
@@ -210,6 +215,7 @@ pub fn not_yet_supported<'a>() -> Element<'a> {
             shadow: shadow(*theme),
             snap: false
         })
+        .clip(true)
         .into()
 }
 

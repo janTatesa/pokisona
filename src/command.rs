@@ -1,10 +1,11 @@
 use std::{
     fmt::{Display, Formatter},
-    path::PathBuf,
     str::FromStr
 };
 
 use serde::{Deserialize, Deserializer, de};
+
+use crate::PathBuf;
 
 #[derive(Clone)]
 pub struct Command {
