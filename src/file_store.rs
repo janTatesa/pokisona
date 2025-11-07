@@ -1,19 +1,22 @@
 // TODO: switch to smth more robust
-use std::sync::{Arc, LazyLock, OnceLock, Weak};
+use std::{
+    cell::OnceCell,
+    rc::{Rc, Weak}
+};
 
 use dashmap::DashMap;
 
 use crate::{Path, PathBuf, markdown::MarkdownStore};
 
-// TODO: Maybe a leaked reference is better than a static
-pub static FILE_STORE: LazyLock<FileStore> = LazyLock::new(FileStore::default);
+// TODO: maybe use RefCell hashmap
 #[derive(Default, Debug)]
 pub struct FileStore(DashMap<PathBuf, Weak<FileData>>);
 
 #[derive(Debug)]
 pub struct FileData {
     path: PathBuf,
-    content: OnceLock<MarkdownStore>
+    file_store: &'static FileStore,
+    content: OnceCell<MarkdownStore>
 }
 
 impl FileData {
@@ -28,22 +31,24 @@ impl FileData {
 
 impl Drop for FileData {
     fn drop(&mut self) {
-        FILE_STORE.0.remove(self.path());
+        self.file_store.0.remove(self.path());
     }
 }
 
 impl FileStore {
     // Returns the reference to file data and also if the reference was newly created
-    pub fn get_ref(&self, path: PathBuf) -> (Arc<FileData>, bool) {
+    pub fn get_ref(&'static self, path: PathBuf) -> (Rc<FileData>, bool) {
         if let Some(data) = self.0.get(&path).and_then(|weak| weak.upgrade()) {
             return (data, false);
         }
-        let data = Arc::new(FileData {
+
+        let data = Rc::new(FileData {
             path: path.clone(),
-            content: OnceLock::new()
+            content: OnceCell::new(),
+            file_store: self
         });
 
-        self.0.insert(path, Arc::downgrade(&data));
+        self.0.insert(path, Rc::downgrade(&data));
         (data, true)
     }
 

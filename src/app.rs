@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{rc::Rc, time::Duration};
 
 use color_eyre::Result;
 use iced::{
@@ -14,7 +14,7 @@ use crate::{
     command::{Command, CommandKind},
     command_history::CommandHistory,
     config::{Config, Keybinding},
-    file_store::{FILE_STORE, FileData},
+    file_store::{FileData, FileStore},
     iced_helpers::{BorderType, Element, Link, container, text},
     markdown::Markdown,
     theme::Theme,
@@ -29,6 +29,8 @@ pub struct Pokisona {
 
     scale: f32,
 
+    file_store: &'static FileStore,
+
     command_history: CommandHistory,
     typed_command: Option<String>,
 
@@ -39,7 +41,7 @@ pub struct Pokisona {
 }
 
 enum HoveredLink {
-    Internal(Arc<FileData>),
+    Internal(Rc<FileData>),
     Error(String),
     External(String)
 }
@@ -109,7 +111,8 @@ impl Pokisona {
                     error_id: 0,
                     command_history: CommandHistory::default(),
                     scale: config.scale.default,
-                    hovered_link: None
+                    hovered_link: None,
+                    file_store: Box::leak(Box::new(FileStore::default()))
                 };
 
                 (app, task)
@@ -127,8 +130,8 @@ impl Pokisona {
         self.config.theme
     }
 
-    fn open_file(&mut self, path: PathBuf) -> (Arc<FileData>, Task<Message>) {
-        let (data, newly_created) = FILE_STORE.get_ref(path.clone());
+    fn open_file(&mut self, path: PathBuf) -> (Rc<FileData>, Task<Message>) {
+        let (data, newly_created) = self.file_store.get_ref(path.clone());
 
         let task = if newly_created {
             Task::future(async {
@@ -164,7 +167,7 @@ impl Pokisona {
                 self.typed_command = Some(command)
             }
             Message::FileOpened { path, content } => {
-                FILE_STORE.insert(&path, Markdown::new(content))
+                self.file_store.insert(&path, Markdown::new(content))
             }
             Message::Error(error) => {
                 return self.display_error(error);

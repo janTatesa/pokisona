@@ -2,7 +2,7 @@
 use std::{
     mem,
     ops::{Index, IndexMut},
-    sync::Arc
+    rc::Rc
 };
 
 use iced::{
@@ -340,7 +340,7 @@ where
 pub enum Window {
     #[default]
     Empty,
-    Markdown(Arc<FileData>)
+    Markdown(Rc<FileData>)
 }
 
 impl Window {
