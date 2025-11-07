@@ -3,11 +3,12 @@ mod command;
 mod command_history;
 mod config;
 mod file_store;
+mod iced_helpers;
 mod markdown;
-mod widget;
+mod theme;
 mod window;
 
-use std::{fs, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
 use clap::{ArgAction, Parser, Subcommand};
 use color_eyre::{Result, eyre::OptionExt};
@@ -69,12 +70,14 @@ fn main() -> Result<()> {
         }
     };
 
-    path.extend(["vaults", &vault_name, ".pokisona"]);
+    path.extend(["vaults", &vault_name]);
     fs::create_dir_all(&path)?;
-    path.push("config.toml");
-    let config = Config::new(&path, cli.use_default_config)?;
-    path.pop();
-    path.pop();
-    Pokisona::run(vault_name, path, cli.file, config)?;
+    env::set_current_dir(&path)?;
+
+    // TODO: this should be conditional
+    fs::create_dir_all(".pokisona")?;
+    let path = &PathBuf::from_iter([".pokisona", "config.toml"]);
+    let config = Config::new(path, cli.use_default_config)?;
+    Pokisona::run(vault_name, cli.file, config)?;
     Ok(())
 }

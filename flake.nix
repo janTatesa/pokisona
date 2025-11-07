@@ -7,7 +7,6 @@
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    # pest-ide-tools.url = "github:janTatesa/pest-ide-tools";
   };
 
   outputs =
@@ -27,20 +26,7 @@
                 inherit system;
                 overlays = [
                   inputs.rust-overlay.overlays.default
-                  (final: prev: {
-                    rustToolchain = prev.rust-bin.stable.latest.default.override {
-                      extensions = [
-                        "rust-analyzer"
-                        "rust-src"
-                      ];
-                    };
-                    rustfmt = prev.lib.hiPrio prev.rust-bin.nightly.latest.rustfmt;
-                    deps = with prev; [
-                      wayland
-                      libxkbcommon
-                      vulkan-loader
-                    ];
-                  })
+
                 ];
               };
             }
@@ -53,14 +39,28 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               pkg-config
-              rustfmt
-              rustToolchain
-              openssl
+              pkgs.rust-bin.nightly.latest.rustfmt
+              (pkgs.rust-bin.stable.latest.default.override {
+                extensions = [
+                  "rust-analyzer"
+                  "rust-src"
+                ];
+              })
+
             ];
 
             env = {
               ICED_BACKEND = "wgpu";
-              RUSTFLAGS = "-C link-arg=-Wl,-rpath,${pkgs.lib.makeLibraryPath pkgs.deps}";
+              RUSTFLAGS = "-C link-arg=-Wl,-rpath,${
+                pkgs.lib.makeLibraryPath (
+                  with pkgs;
+                  [
+                    wayland
+                    libxkbcommon
+                    vulkan-loader
+                  ]
+                )
+              }";
             };
           };
         }

@@ -1,30 +1,29 @@
-use std::{path::PathBuf, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use color_eyre::Result;
 use iced::{
     Alignment::{self},
-    Element, Event, Task, event, exit,
-    widget::{Id, operation::focus},
+    Event, Length, Task, event, exit,
+    widget::{self, Id, column, operation::focus, row, stack},
     window
 };
 use smol::{Timer, fs};
 
 use crate::{
-    column,
     command::{Command, CommandKind},
     command_history::CommandHistory,
     config::{Config, Keybinding},
-    file_store::FILE_STORE,
+    file_store::{FILE_STORE, FileData},
+    iced_helpers::{BorderType, Element, Link, container, text},
     markdown::Markdown,
-    row,
-    widget::{ContainerKind, Spacing, Theme, Widget},
-    window::{Window, WindowManager}
+    theme::Theme,
+    window::{Direction, Window, WindowManager}
 };
+
 pub struct Pokisona {
     config: Config,
 
     vault_name: String,
-    vault_path: PathBuf,
     window_manager: WindowManager,
 
     scale: f32,
@@ -33,22 +32,33 @@ pub struct Pokisona {
     typed_command: Option<String>,
 
     error_id: u64,
-    error: Option<String>
+    error: Option<String>,
+
+    hovered_link: Option<HoveredLink>
+}
+
+enum HoveredLink {
+    Internal(Arc<FileData>),
+    Error(String),
+    External(String)
 }
 
 #[derive(Debug, Clone)]
 pub enum Message {
     InitialFileOpen(PathBuf),
-    Edit(TextInputId, String),
-    Submit(TextInputId),
-    Focus(Id),
+
+    EditCommand(String),
+    SubmitCommand,
+    Focus(ElementId),
+
+    LinkClick(Link),
+    Hover(Link),
+    HoverEnd,
+
     KeyEvent(Keybinding),
     ClearError(u64),
-    FileOpened {
-        path: PathBuf,
-        // HACK: We have to use string because message has to be clone
-        content: Result<String, String>
-    }
+    FileOpened { path: PathBuf, content: String },
+    Error(String)
 }
 
 impl Message {
@@ -64,14 +74,14 @@ impl Message {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum TextInputId {
+pub enum ElementId {
     CommandInput
 }
 
-impl From<TextInputId> for Id {
-    fn from(val: TextInputId) -> Self {
+impl From<ElementId> for Id {
+    fn from(val: ElementId) -> Self {
         Self::new(match val {
-            TextInputId::CommandInput => "command-input"
+            ElementId::CommandInput => "command-input"
         })
     }
 }
@@ -80,29 +90,29 @@ impl Pokisona {
     const DEFAULT_SCALE: f32 = 1.;
     pub fn run(
         vault_name: String,
-        path: PathBuf,
         initial_file: Option<PathBuf>,
         config: Config
     ) -> Result<(), iced::Error> {
         iced::application(
             move || {
-                (
-                    Self {
-                        config: config.clone(),
-                        vault_name: vault_name.clone(),
-                        vault_path: path.clone(),
-                        window_manager: WindowManager::default(),
-                        typed_command: None,
-                        error: None,
-                        error_id: 0,
-                        command_history: CommandHistory::default(),
-                        scale: Self::DEFAULT_SCALE
-                    },
-                    match initial_file.clone() {
-                        Some(initial_file) => Task::done(Message::InitialFileOpen(initial_file)),
-                        None => Task::none()
-                    }
-                )
+                let task = match initial_file.clone() {
+                    Some(initial_file) => Task::done(Message::InitialFileOpen(initial_file)),
+                    None => Task::none()
+                };
+
+                let app = Self {
+                    config: config.clone(),
+                    vault_name: vault_name.clone(),
+                    window_manager: WindowManager::default(),
+                    typed_command: None,
+                    error: None,
+                    error_id: 0,
+                    command_history: CommandHistory::default(),
+                    scale: Self::DEFAULT_SCALE,
+                    hovered_link: None
+                };
+
+                (app, task)
             },
             Self::update,
             Self::view
@@ -117,20 +127,23 @@ impl Pokisona {
         self.config.theme
     }
 
-    fn open_file(&mut self, path: PathBuf) -> Task<Message> {
+    fn open_file(&mut self, path: PathBuf) -> (Arc<FileData>, Task<Message>) {
         let (data, newly_created) = FILE_STORE.get_ref(path.clone());
-        *self.window_manager.current_window_mut() = Window::Markdown(data);
-        if newly_created {
-            let absolute_path = self.vault_path.join(&path);
-            return Task::future(async {
-                let content = fs::read_to_string(absolute_path)
+
+        let task = if newly_created {
+            Task::future(async {
+                let content = fs::read_to_string(&path)
                     .await
                     .map_err(|error| error.to_string());
-                Message::FileOpened { path, content }
-            });
-        }
+                content
+                    .map(|content| Message::FileOpened { path, content })
+                    .unwrap_or_else(Message::Error)
+            })
+        } else {
+            Task::none()
+        };
 
-        Task::none()
+        (data, task)
     }
 
     const ERROR_DISPLAY_DURATION: Duration = Duration::from_secs(1);
@@ -146,28 +159,27 @@ impl Pokisona {
 
     fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
-            Message::Edit(TextInputId::CommandInput, command) => {
+            Message::EditCommand(command) => {
                 self.command_history.deselect();
                 self.typed_command = Some(command)
             }
-            Message::FileOpened {
-                path,
-                content: Ok(source)
-            } => FILE_STORE.insert(&path, Markdown::new(source)),
-            Message::FileOpened {
-                path,
-                content: Err(error)
-            } => {
-                return self
-                    .display_error(format!("Cannot open {}: {error}", path.to_string_lossy()));
+            Message::FileOpened { path, content } => {
+                FILE_STORE.insert(&path, Markdown::new(content))
             }
-            Message::Submit(TextInputId::CommandInput) => {
-                if self.typed_command.as_ref().unwrap().is_empty() {
+            Message::Error(error) => {
+                return self.display_error(error);
+            }
+            Message::SubmitCommand => {
+                let typed_command = self.typed_command.take();
+                let typed_command = self
+                    .command_history
+                    .currently_selected()
+                    .or(typed_command.as_deref())
+                    .unwrap_or_default();
+                if typed_command.is_empty() {
                     return Task::none();
                 }
 
-                self.command_history.deselect();
-                let typed_command = self.typed_command.take().unwrap();
                 let command: Command = match typed_command.parse() {
                     Ok(command) => command,
                     Err(error) => {
@@ -176,13 +188,12 @@ impl Pokisona {
                     }
                 };
 
-                self.command_history.push(typed_command);
+                self.command_history.push(typed_command.to_owned());
                 return self.handle_command(command);
             }
             Message::Focus(id) => return focus(id),
             Message::ClearError(id) if self.error_id == id => self.error = None,
             Message::ClearError(_) => {}
-
             Message::InitialFileOpen(path) => {
                 return self.handle_command(Command {
                     _force: false,
@@ -194,6 +205,33 @@ impl Pokisona {
                     return self.handle_command(command.clone());
                 }
             }
+            Message::LinkClick(link) => {
+                return match link {
+                    Link::Internal(path) => self.handle_command(Command {
+                        _force: false,
+                        kind: CommandKind::Open { path }
+                    }),
+                    Link::External(url) => open::that(url.as_str())
+                        .map(|_| Task::none())
+                        .unwrap_or_else(|error| Task::done(Message::Error(error.to_string()))),
+                    _ => Task::none()
+                };
+            }
+            Message::Hover(link) => {
+                self.hovered_link = Some(match link {
+                    Link::InvalidUrlExternal(raw) => HoveredLink::Error(raw),
+                    Link::NonExistentInternal(path) => {
+                        HoveredLink::Error(path.to_string_lossy().into_owned())
+                    }
+                    Link::Internal(path) => {
+                        let (data, task) = self.open_file(path);
+                        self.hovered_link = Some(HoveredLink::Internal(data));
+                        return task;
+                    }
+                    Link::External(url) => HoveredLink::External(url.to_string())
+                });
+            }
+            Message::HoverEnd => self.hovered_link = None
         }
 
         Task::none()
@@ -208,23 +246,64 @@ impl Pokisona {
                 }
             }
             CommandKind::QuitAll => return exit(),
-            CommandKind::Open { path } => return self.open_file(path),
-            CommandKind::Split { path } => {
-                match path {
-                    Some(path) => {
-                        self.window_manager.add_window(Window::Empty);
-                        return self.open_file(path);
-                    }
-                    None => self
-                        .window_manager
-                        .add_window(self.window_manager.current_window().clone())
-                };
+            CommandKind::Open { path } => {
+                let (data, task) = self.open_file(path);
+                *self.window_manager.current_window_mut() = Window::Markdown(data);
+                return task;
             }
-            CommandKind::NextSplit => self.window_manager.next_window(),
-            CommandKind::PreviousSplit => self.window_manager.previous_window(),
+
+            CommandKind::Split { path } => {
+                let (window, task) = match path {
+                    Some(path) => {
+                        let (data, task) = self.open_file(path);
+                        (Window::Markdown(data), task)
+                    }
+                    None => (Window::Empty, Task::none())
+                };
+
+                self.window_manager.split(window);
+                return task;
+            }
+            CommandKind::VSplit { path } => {
+                let (window, task) = match path {
+                    Some(path) => {
+                        let (data, task) = self.open_file(path);
+                        (Window::Markdown(data), task)
+                    }
+                    None => (Window::Empty, Task::none())
+                };
+
+                self.window_manager
+                    .split_at_direction(window, Direction::Vertical);
+                return task;
+            }
+            CommandKind::HSplit { path } => {
+                let (window, task) = match path {
+                    Some(path) => {
+                        let (data, task) = self.open_file(path);
+                        (Window::Markdown(data), task)
+                    }
+                    None => (Window::Empty, Task::none())
+                };
+
+                self.window_manager
+                    .split_at_direction(window, Direction::Horizontal);
+                return task;
+            }
+
+            CommandKind::TransposeWindows => self.window_manager.transpose_windows(),
+            CommandKind::NextWindow => self.window_manager.next_window(),
+            CommandKind::PreviousWindow => self.window_manager.previous_window(),
+
             CommandKind::ScaleUp => self.scale += scale.default_step,
-            CommandKind::ScaleDown => self.scale -= scale.default_step,
+            CommandKind::ScaleDown => {
+                let scale = self.scale - scale.default_step;
+                if scale > 0. {
+                    self.scale = scale;
+                }
+            }
             CommandKind::ScaleReset => self.scale = scale.default,
+
             CommandKind::HistoryUp => self.command_history.select_up(),
             CommandKind::HistoryDown => self.command_history.select_down(),
             CommandKind::CommandModeOpen => self.typed_command = Some(String::new()),
@@ -235,36 +314,60 @@ impl Pokisona {
         Task::none()
     }
 
-    fn view(&self) -> Element<'_, Message, Theme> {
-        let vault_name = Widget::container(
-            self.vault_name.as_str(),
-            ContainerKind::Aligned {
-                horizontal: Some(Alignment::End),
-                vertical: None
-            }
-        );
+    fn view(&self) -> Element<'_> {
+        let theme = self.config.theme;
+        let vault_name = container(self.vault_name.as_str())
+            .align_x(Alignment::End)
+            .width(Length::Fill);
 
-        let bar_content = match (
+        let bar_content: Element<'_> = match (
             self.command_history.currently_selected(),
             self.typed_command.as_deref(),
             &self.error
         ) {
             (Some(command), ..) | (_, Some(command), _) => row![
-                Spacing::None,
                 ":",
-                Widget::TextInput {
-                    content: command,
-                    placeholder: "Enter command",
-                    id: TextInputId::CommandInput
-                },
+                widget::sensor(
+                    widget::text_input("Enter command", command)
+                        .on_input(Message::EditCommand)
+                        .on_submit(Message::SubmitCommand)
+                        .id(ElementId::CommandInput)
+                        .padding(0)
+                )
+                .on_show(|_| Message::Focus(ElementId::CommandInput)),
                 vault_name
-            ],
-            (_, _, Some(error)) => row![Spacing::None, Widget::Error(error.into()), vault_name],
-            _ => vault_name
+            ]
+            .spacing(0)
+            .into(),
+            (_, _, Some(error)) => row![text(error, theme.danger), vault_name].into(),
+            _ => vault_name.into()
         };
 
-        let bar = Widget::container(bar_content, ContainerKind::Bar);
-        let windows = self.window_manager.render();
-        column![Spacing::None, windows, bar].render(self.theme())
+        let bar = container(bar_content)
+            .color(theme.crust)
+            .border(BorderType::None)
+            .width(Length::Fill);
+        let hovered_link = self.hovered_link.as_ref().and_then(|link| {
+            let element = match link {
+                HoveredLink::Internal(file_data) => file_data.content()?.inner().render(theme),
+                HoveredLink::Error(url) => text(url, theme.danger).into(),
+                HoveredLink::External(url) => text(url, theme.link_external).into()
+            };
+            Some(container(element).padded())
+        });
+
+        let hovered_link = container(
+            container(hovered_link)
+                .color(theme.crust)
+                .border(BorderType::Normal)
+        )
+        .align_y(Alignment::End)
+        .stretched();
+
+        let windows = container(self.window_manager.render(self.theme())).stretched();
+        let ui = container(stack![windows, hovered_link])
+            .padded()
+            .stretched();
+        column![ui, bar].into()
     }
 }

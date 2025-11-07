@@ -1,20 +1,24 @@
+// TODO:c this contains a lot of spaghetti
+
 use std::{
     mem,
     ops::{Index, IndexMut},
     sync::Arc
 };
 
+use iced::widget::{Column, Row};
+
 use crate::{
-    column,
     file_store::FileData,
-    row,
-    widget::{ContainerKind, Spacing, Widget}
+    iced_helpers::{BorderType, Element, SPACING, container},
+    theme::Theme
 };
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct WindowManager {
     root_node: WindowLayoutNode,
     windows_len: usize,
-    current_window: usize
+    current_window: usize,
+    starting_direction: Direction
 }
 
 impl Default for WindowManager {
@@ -22,12 +26,20 @@ impl Default for WindowManager {
         Self {
             root_node: WindowLayoutNode::Window(Window::default()),
             windows_len: 1,
-            current_window: 0
+            current_window: 0,
+            starting_direction: Direction::Vertical
         }
     }
 }
 
 impl WindowManager {
+    pub fn transpose_windows(&mut self) {
+        self.starting_direction = match self.starting_direction {
+            Direction::Horizontal => Direction::Vertical,
+            Direction::Vertical => Direction::Horizontal
+        }
+    }
+
     pub fn next_window(&mut self) {
         self.current_window = (self.current_window + 1) % self.windows_len;
     }
@@ -39,24 +51,75 @@ impl WindowManager {
             .unwrap_or(self.windows_len - 1);
     }
 
-    pub fn add_window(&mut self, new_window: Window) {
+    pub fn split(&mut self, new_window: Window) {
+        match &mut self.root_node {
+            WindowLayoutNode::Window(window) => {
+                self.root_node = WindowLayoutNode::Split(
+                    [mem::take(window), new_window]
+                        .map(WindowLayoutNode::Window)
+                        .to_vec()
+                )
+            }
+            WindowLayoutNode::Split(nodes) => {
+                WindowLayoutNode::split_at(
+                    nodes,
+                    self.current_window,
+                    new_window,
+                    None,
+                    self.starting_direction
+                );
+            }
+        }
+
         self.windows_len += 1;
-        self.root_node.split_at(self.current_window, new_window);
+        self.next_window();
+    }
+
+    pub fn split_at_direction(&mut self, new_window: Window, direction: Direction) {
+        match &mut self.root_node {
+            WindowLayoutNode::Window(window) => {
+                self.root_node = WindowLayoutNode::Split(
+                    [mem::take(window), new_window]
+                        .map(WindowLayoutNode::Window)
+                        .to_vec()
+                );
+                self.starting_direction = direction;
+            }
+            WindowLayoutNode::Split(nodes) => {
+                WindowLayoutNode::split_at(
+                    nodes,
+                    self.current_window,
+                    new_window,
+                    Some(direction),
+                    self.starting_direction
+                );
+            }
+        }
+
+        self.windows_len += 1;
         self.next_window();
     }
 
     #[must_use = "If none is returned the application should quit"]
     pub fn remove_window(&mut self) -> Option<Window> {
-        let window = self.root_node.remove_split_at(self.current_window)?;
+        let window = self.root_node.remove_window_at(self.current_window)?;
         self.windows_len -= 1;
         self.previous_window();
         Some(window)
     }
 
-    pub fn render(&self) -> Widget<'_> {
-        self.root_node.render(self.current_window)
+    pub fn render(&self, theme: Theme) -> Element<'_> {
+        if let WindowLayoutNode::Window(window) = &self.root_node {
+            return window.render(theme);
+        }
+
+        let content =
+            self.root_node
+                .render(Some(self.current_window), self.starting_direction, theme);
+        container(content).color(theme.mantle).stretched().into()
     }
 
+    #[allow(dead_code)]
     pub fn current_window(&self) -> &Window {
         &self.root_node[self.current_window]
     }
@@ -66,10 +129,10 @@ impl WindowManager {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 enum WindowLayoutNode {
     Window(Window),
-    Split(Box<(WindowLayoutNode, WindowLayoutNode)>)
+    Split(Vec<WindowLayoutNode>)
 }
 
 impl Default for WindowLayoutNode {
@@ -78,102 +141,114 @@ impl Default for WindowLayoutNode {
     }
 }
 
-enum Direction {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Direction {
     Horizontal,
     Vertical
 }
 
 impl WindowLayoutNode {
-    fn render(&self, focused_idx: usize) -> Widget<'_> {
-        match self {
-            WindowLayoutNode::Window(window) => {
-                Widget::container(window.render(), ContainerKind::Padded)
+    fn render(
+        &self,
+        focused_idx: Option<usize>,
+        direction: Direction,
+        theme: Theme
+    ) -> Element<'_> {
+        match (self, focused_idx, direction) {
+            (WindowLayoutNode::Window(window), Some(0), _) => container(window.render(theme))
+                .border(BorderType::Focused)
+                .color(theme.base)
+                .stretched()
+                .into(),
+            (WindowLayoutNode::Window(window), ..) => container(window.render(theme))
+                .border(BorderType::Normal)
+                .color(theme.base)
+                .stretched()
+                .into(),
+            (WindowLayoutNode::Split(nodes), _, Direction::Horizontal) => Column::from_iter(
+                NodeIter {
+                    i: nodes.iter(),
+                    focused_idx
+                }
+                .map(|(node, focused_idx)| node.render(focused_idx, Direction::Vertical, theme))
+            )
+            .spacing(SPACING)
+            .into(),
+            (WindowLayoutNode::Split(nodes), _, Direction::Vertical) => Row::from_iter(
+                NodeIter {
+                    i: nodes.iter(),
+                    focused_idx
+                }
+                .map(|(node, focused_idx)| node.render(focused_idx, Direction::Horizontal, theme))
+            )
+            .spacing(SPACING)
+            .into()
+        }
+    }
+
+    fn split_at(
+        nodes: &mut Vec<Self>,
+        idx: usize,
+        new_window: Window,
+        target_direction: Option<Direction>,
+        current_direction: Direction
+    ) {
+        let i = nodes.iter_mut();
+        let focused_idx = Some(idx);
+        let (node, new_focused_idx) = NodeIter { i, focused_idx }
+            .find_map(|(node, focused)| Some((node, focused?)))
+            .expect("Index out of bounds");
+
+        match node {
+            WindowLayoutNode::Window(_)
+                if target_direction.is_some_and(|target| target == current_direction) =>
+            {
+                nodes.insert(idx + 1, WindowLayoutNode::Window(new_window));
             }
-            WindowLayoutNode::Split(_) => Widget::container(
-                self.render_nested(Some(focused_idx), Direction::Vertical),
-                ContainerKind::Mantle
+            WindowLayoutNode::Window(window) => {
+                *node = WindowLayoutNode::Split(
+                    [mem::take(window), new_window]
+                        .map(WindowLayoutNode::Window)
+                        .to_vec()
+                )
+            }
+
+            WindowLayoutNode::Split(window_layout_nodes) => Self::split_at(
+                window_layout_nodes,
+                new_focused_idx,
+                new_window,
+                target_direction,
+                match current_direction {
+                    Direction::Horizontal => Direction::Vertical,
+                    Direction::Vertical => Direction::Horizontal
+                }
             )
         }
     }
 
-    fn render_nested(&self, focused_idx: Option<usize>, direction: Direction) -> Widget<'_> {
-        match (self, focused_idx, direction) {
-            (WindowLayoutNode::Window(window), Some(0), _) => {
-                Widget::container(window.render(), ContainerKind::BorderedBoxFocused)
-            }
-            (WindowLayoutNode::Window(window), ..) => {
-                Widget::container(window.render(), ContainerKind::BorderedBox)
-            }
-            (WindowLayoutNode::Split(nodes), _, Direction::Horizontal) => column![
-                Spacing::Normal,
-                nodes.0.render_nested(focused_idx, Direction::Vertical),
-                nodes.1.render_nested(
-                    focused_idx.and_then(|idx| idx.checked_sub(nodes.0.len())),
-                    Direction::Vertical
-                )
-            ],
-            (WindowLayoutNode::Split(nodes), _, Direction::Vertical) => row![
-                Spacing::Normal,
-                nodes.0.render_nested(focused_idx, Direction::Horizontal),
-                nodes.1.render_nested(
-                    focused_idx.and_then(|idx| idx.checked_sub(nodes.0.len())),
-                    Direction::Horizontal
-                )
-            ]
-        }
-    }
-
-    fn split_at(&mut self, index: usize, new_window: Window) {
-        match self {
-            WindowLayoutNode::Window(window) => {
-                let old_window = WindowLayoutNode::Window(mem::take(window));
-                let new_window = WindowLayoutNode::Window(new_window);
-                *self = WindowLayoutNode::Split(Box::new((old_window, new_window)))
-            }
-            WindowLayoutNode::Split(nodes) => {
-                let first_node_len = nodes.0.len();
-                if first_node_len > index {
-                    return nodes.0.split_at(index, new_window);
-                }
-
-                nodes.1.split_at(index - first_node_len, new_window);
-            }
-        }
-    }
-
-    fn remove_split_at(&mut self, index: usize) -> Option<Window> {
+    #[must_use = "If none is returned the last window was closed and the app should quit"]
+    fn remove_window_at(&mut self, focused_idx: usize) -> Option<Window> {
         match self {
             WindowLayoutNode::Window(_) => None,
-            WindowLayoutNode::Split(nodes) => {
-                if let WindowLayoutNode::Window(window) = &mut nodes.0
-                    && index == 0
-                {
-                    let removed = Some(mem::take(window));
-                    *self = mem::take(&mut nodes.1);
-                    return removed;
+            WindowLayoutNode::Split(window_layout_nodes) => {
+                let (node, new_focused_idx) = NodeIter {
+                    i: window_layout_nodes.iter_mut(),
+                    focused_idx: Some(focused_idx)
+                }
+                .find_map(|(node, idx)| Some((node, idx?)))
+                .expect("Index out of bounds");
+                if let WindowLayoutNode::Window(window) = node {
+                    let window = mem::take(window);
+                    window_layout_nodes.remove(focused_idx);
+                    if window_layout_nodes.len() == 1 {
+                        *self = mem::take(window_layout_nodes.iter_mut().next().unwrap());
+                    }
+
+                    return Some(window);
                 }
 
-                let first_node_len = nodes.0.len();
-
-                if first_node_len > index {
-                    return nodes.0.remove_split_at(index);
-                }
-
-                if let WindowLayoutNode::Window(window) = &mut nodes.1 {
-                    let removed = Some(mem::take(window));
-                    *self = mem::take(&mut nodes.0);
-                    return removed;
-                }
-
-                nodes.1.remove_split_at(index)
+                node.remove_window_at(new_focused_idx)
             }
-        }
-    }
-
-    fn len(&self) -> usize {
-        match self {
-            WindowLayoutNode::Window(_) => 1,
-            WindowLayoutNode::Split(nodes) => nodes.0.len() + nodes.1.len()
         }
     }
 }
@@ -183,15 +258,15 @@ impl Index<usize> for WindowLayoutNode {
 
     fn index(&self, index: usize) -> &Self::Output {
         match self {
-            Self::Window(window) if index == 0 => window,
-            Self::Window(_) => panic!("Index {index} out of bounds in window layout"),
-            Self::Split(nodes) => {
-                let first_node_len = nodes.0.len();
-                if first_node_len > index {
-                    return &nodes.0[index];
+            WindowLayoutNode::Window(window) => window,
+            WindowLayoutNode::Split(window_layout_nodes) => {
+                let (node, idx) = NodeIter {
+                    i: window_layout_nodes.iter(),
+                    focused_idx: Some(index)
                 }
-
-                &nodes.1[index - first_node_len]
+                .find_map(|(node, idx)| Some((node, idx?)))
+                .expect("Index out of bounds");
+                &node[idx]
             }
         }
     }
@@ -200,23 +275,73 @@ impl Index<usize> for WindowLayoutNode {
 impl IndexMut<usize> for WindowLayoutNode {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         match self {
-            Self::Window(window) if index == 0 => window,
-            Self::Window(_) => {
-                panic!("Index {index} out of bounds in window layout")
-            }
-            Self::Split(nodes) => {
-                let first_node_len = nodes.0.len();
-                if first_node_len > index {
-                    return &mut nodes.0[index];
+            WindowLayoutNode::Window(window) => window,
+            WindowLayoutNode::Split(window_layout_nodes) => {
+                let (node, idx) = NodeIter {
+                    i: window_layout_nodes.iter_mut(),
+                    focused_idx: Some(index)
                 }
-
-                &mut nodes.1[index - first_node_len]
+                .find_map(|(node, idx)| Some((node, idx?)))
+                .expect("Index out of bounds");
+                &mut node[idx]
             }
         }
     }
 }
 
-#[derive(Default, Clone)]
+trait WithLen {
+    fn len(&self) -> usize;
+}
+
+impl WithLen for &WindowLayoutNode {
+    fn len(&self) -> usize {
+        match self {
+            WindowLayoutNode::Window(_) => 1,
+            WindowLayoutNode::Split(window_layout_nodes) => {
+                window_layout_nodes.iter().map(|node| node.len()).sum()
+            }
+        }
+    }
+}
+
+impl WithLen for &mut WindowLayoutNode {
+    fn len(&self) -> usize {
+        (&**self).len()
+    }
+}
+
+struct NodeIter<I> {
+    i: I,
+    focused_idx: Option<usize>
+}
+
+impl<I> Iterator for NodeIter<I>
+where
+    I: Iterator,
+    I::Item: WithLen
+{
+    type Item = (I::Item, Option<usize>);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let node = self.i.next()?;
+        let len = node.len();
+        let current_focused = match self.focused_idx {
+            Some(focused) if focused < len => {
+                self.focused_idx = None;
+                Some(focused)
+            }
+            Some(focused) => {
+                self.focused_idx = Some(focused - len);
+                None
+            }
+            _ => None
+        };
+
+        Some((node, current_focused))
+    }
+}
+
+#[derive(Default, Clone, Debug)]
 #[allow(dead_code)]
 pub enum Window {
     #[default]
@@ -225,13 +350,13 @@ pub enum Window {
 }
 
 impl Window {
-    fn render(&self) -> Widget<'_> {
+    fn render(&self, theme: Theme) -> Element<'_> {
         match self {
-            Window::Empty => Widget::Space,
+            Window::Empty => None,
             Window::Markdown(file_data) => file_data
                 .content()
-                .map(|content| content.inner().render())
-                .into()
+                .map(|content| content.inner().render(theme))
         }
+        .into()
     }
 }

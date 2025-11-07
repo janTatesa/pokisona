@@ -49,12 +49,19 @@ impl FromStr for Command {
             "split" | "sp" => CommandKind::Split {
                 path: args.next().map(PathBuf::from)
             },
+            "vsplit" | "vs" => CommandKind::VSplit {
+                path: args.next().map(PathBuf::from)
+            },
+            "hsplit" | "hs" => CommandKind::HSplit {
+                path: args.next().map(PathBuf::from)
+            },
             // "w" => Self::Write,
             // "wa" => Self::WriteAll,
             // "x" | "wq" => Self::WriteQuit,
             // "xa" | "wqa" => Self::WriteQuitAll,
-            "next-split" => CommandKind::NextSplit,
-            "previous-split" => CommandKind::PreviousSplit,
+            "next-window" => CommandKind::NextWindow,
+            "previous-window" => CommandKind::PreviousWindow,
+            "transpose-windows" => CommandKind::TransposeWindows,
             "scale-up" => CommandKind::ScaleUp,
             "scale-down" => CommandKind::ScaleDown,
             "scale-reset" => CommandKind::ScaleReset,
@@ -89,15 +96,22 @@ pub enum CommandKind {
     // WriteQuit,
     // WriteQuitAll,
     Open { path: PathBuf },
+
     Split { path: Option<PathBuf> },
-    NextSplit,
-    PreviousSplit,
+    VSplit { path: Option<PathBuf> },
+    HSplit { path: Option<PathBuf> },
+    NextWindow,
+    PreviousWindow,
+    TransposeWindows,
+
     ScaleUp,
     ScaleDown,
     ScaleReset,
+
     HistoryUp,
     HistoryDown,
     CommandModeOpen,
     CommandModeExit,
+
     Noop
 }

@@ -28,7 +28,8 @@ text_wrapped =  { (!(PEEK | line_item | NEWLINE) ~ ANY)+ }
 text         =  { (!(line_item | NEWLINE) ~ ANY)+ }
 
 tag       = { "#" ~ word }
-reference = { "^" ~ word }
+// TODO: references should be attached to a specific item
+reference = { "^" ~ word } 
 
 indentation = { "\t"  | "  " }
 list_item   = { PUSH(indentation*) ~ (task_done | task_due | bullet | numbered) ~ " " ~ line ~ hard_break ~ list_item_indented* ~ DROP }

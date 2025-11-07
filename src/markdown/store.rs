@@ -7,6 +7,7 @@ use std::{
 
 use crate::markdown::Markdown;
 
+#[derive(Debug)]
 pub struct MarkdownStore {
     markdown: ManuallyDrop<Markdown<'static>>,
     source: NonNull<str>

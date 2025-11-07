@@ -6,7 +6,7 @@ accent = "mauve"
 
 [scale]
 default = 1.5
-default_step = 0.5
+default_step = 0.2
 
 [keybindings]
 "C-+" = "scale-up"

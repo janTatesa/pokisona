@@ -1,67 +1,90 @@
 use std::{
     iter::{self, Peekable},
-    slice
+    path::PathBuf,
+    slice,
+    str::FromStr
 };
 
+use iced::widget::{self, Column, space};
 use itertools::{Either, Itertools, put_back};
+use url::Url;
 
 use super::{Block, BlockKind, Line, LineItem, Markdown};
-use crate::widget::{Modifiers, Spacing, Span, Widget};
+use crate::{
+    iced_helpers::{
+        BORDER_WIDTH, Element, Link, Modifiers, SPACING, Span, not_yet_supported, rich_text
+    },
+    theme::Theme
+};
 impl<'a> Markdown<'a> {
-    pub fn render(&'a self) -> Widget<'a> {
+    pub fn render(&'a self, theme: Theme) -> Element<'a> {
         let iter = self
             .yaml
             .as_ref()
-            .map(|_| Widget::NotYetSupported)
+            .map(|_| not_yet_supported())
             .into_iter()
-            .chain(self.content.iter().map(Block::render));
-        Widget::column(Spacing::Normal, iter)
+            .chain(self.content.iter().map(|block| block.render(theme)));
+        Column::from_iter(iter).spacing(SPACING).into()
     }
 }
 
 impl<'a> Block<'a> {
-    fn render(&'a self) -> Widget<'a> {
+    fn render(&'a self, theme: Theme) -> Element<'a> {
         match &self.kind {
-            BlockKind::Line(line) => Widget::row(
-                Spacing::Normal,
-                LineItemIterWrapper(LineItemIter::new(line, Modifiers::empty()).peekable())
-            ),
+            BlockKind::Line(line) => widget::row(LineItemIterWrapper {
+                inner: LineItemIter::new(line, Modifiers::empty()).peekable(),
+                heading: None,
+                theme
+            })
+            .spacing(SPACING)
+            .into(),
             BlockKind::Code { .. }
             | BlockKind::ListItem(_)
             | BlockKind::Quote { .. }
             | BlockKind::Callout { .. }
-            | BlockKind::Math { .. } => Widget::NotYetSupported,
+            | BlockKind::Math { .. } => not_yet_supported(),
             BlockKind::Heading {
                 nesting,
                 title,
                 content,
                 ..
-            } => Widget::Heading {
-                title: LineItemIterWrapper(LineItemIter::new(title, Modifiers::empty()).peekable())
-                    .collect(),
-                content: content.iter().map(Self::render).collect(),
-                nesting: *nesting
-            },
-            BlockKind::Ruler => Widget::Separator,
-            BlockKind::Comment { .. } => Widget::Space
+            } => widget::column(
+                iter::once(
+                    widget::row(LineItemIterWrapper {
+                        inner: LineItemIter::new(title, Modifiers::empty()).peekable(),
+                        heading: Some(*nesting),
+                        theme
+                    })
+                    .into()
+                )
+                .chain(content.iter().map(|block| block.render(theme)))
+            )
+            .into(),
+            BlockKind::Ruler => widget::rule::horizontal(BORDER_WIDTH).into(),
+            BlockKind::Comment { .. } => space().into()
         }
     }
 }
 
 // TODO: simplify this
-// sis literally needed to create two itterators for such a simple task as making modified spans unified in a single rich text
+// sis literally needed to create two itterators for such a simple task as making modified spans unified in a single rich text, and even that's incomplete
 // what's wrong with me
-struct LineItemIterWrapper<'a>(Peekable<LineItemIter<'a>>);
+struct LineItemIterWrapper<'a> {
+    inner: Peekable<LineItemIter<'a>>,
+    heading: Option<u8>,
+    theme: Theme
+}
+
 impl<'a> Iterator for LineItemIterWrapper<'a> {
-    type Item = Widget<'a>;
+    type Item = Element<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let widget = self.0.next()?.right_or_else(|span| {
+        let widget = self.inner.next()?.right_or_else(|span| {
             // TODO: When put back is turned to a method, use it instead
-            let mut put_back = put_back(&mut self.0);
+            let mut put_back = put_back(&mut self.inner);
             let iter = iter::once(span)
                 .chain(put_back.peeking_map_while(|item| item.map_right(Either::Right)));
-            Widget::rich_text(iter)
+            rich_text(self.theme, iter, self.heading)
         });
 
         Some(widget)
@@ -85,7 +108,7 @@ impl<'a> LineItemIter<'a> {
 }
 
 impl<'a> Iterator for LineItemIter<'a> {
-    type Item = Either<Span<'a>, Widget<'a>>;
+    type Item = Either<Span<'a>, Element<'a>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         use super::LineItemKind as I;
@@ -102,38 +125,70 @@ impl<'a> Iterator for LineItemIter<'a> {
             I::Text => {
                 return Some(Either::Left(Span {
                     modifiers: self.modifiers,
-                    text: line_item.span.as_str().into()
+                    text: line_item.span.as_str().into(),
+                    link: None
                 }));
             }
             I::InlineCodeBlock { inner } => {
                 return Some(Either::Left(Span {
                     modifiers: self.modifiers | Modifiers::CODE,
-                    text: inner.as_str().into()
+                    text: inner.as_str().into(),
+                    link: None
                 }));
             }
 
-            I::InlineMathBlock { inner } => Widget::InlineMath(inner.as_str()),
-            I::SoftBreak
+            I::InlineMathBlock { .. }
+            | I::SoftBreak
             | I::EscapedChar
-            | I::Link { .. }
-            | I::ExternalLink { .. }
             | I::ExternalEmbed { .. }
-            | I::Embed { .. } => Widget::NotYetSupported,
+            | I::Embed { .. } => not_yet_supported(),
             I::Tag => {
                 return Some(Either::Left(Span {
                     modifiers: self.modifiers | Modifiers::TAG,
-                    text: line_item.span.as_str().into()
+                    text: line_item.span.as_str().into(),
+                    link: None
                 }));
             }
 
             I::Reference => {
                 return Some(Either::Left(Span {
                     modifiers: self.modifiers | Modifiers::REFERENCE,
-                    text: line_item.span.as_str().into()
+                    text: line_item.span.as_str().into(),
+                    link: None
                 }));
             }
+            I::Link {
+                file_target,
+                display,
+                ..
+            } => {
+                let path = PathBuf::from(file_target.as_str());
+                let link = if path.exists() {
+                    Link::Internal(path)
+                } else {
+                    Link::NonExistentInternal(path)
+                };
 
-            I::Comment => Widget::Space
+                return Some(Either::Left(Span {
+                    modifiers: self.modifiers,
+                    text: display.unwrap_or(*file_target).as_str().into(),
+                    // TODO: All IO should be async
+                    link: Some(link)
+                }));
+            }
+            I::ExternalLink {
+                target, display, ..
+            } => {
+                let link = Url::from_str(target.as_str())
+                    .map(Link::External)
+                    .unwrap_or(Link::InvalidUrlExternal(target.as_str().to_string()));
+                return Some(Either::Left(Span {
+                    modifiers: self.modifiers,
+                    text: display.unwrap_or(*target).as_str().into(),
+                    link: Some(link)
+                }));
+            }
+            I::Comment => space().into()
         };
 
         Some(Either::Right(widget))

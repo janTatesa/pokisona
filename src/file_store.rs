@@ -8,10 +8,12 @@ use dashmap::DashMap;
 
 use crate::markdown::MarkdownStore;
 
+// TODO: Maybe a leaked reference is better than a static
 pub static FILE_STORE: LazyLock<FileStore> = LazyLock::new(FileStore::default);
 #[derive(Default, Debug)]
 pub struct FileStore(DashMap<PathBuf, Weak<FileData>>);
 
+#[derive(Debug)]
 pub struct FileData {
     path: PathBuf,
     content: OnceLock<MarkdownStore>

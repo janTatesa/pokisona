@@ -11,13 +11,19 @@ use iced::{
 use iced_selection::text as selection_text;
 use serde::Deserialize;
 
-use super::{ALPHA, BORDER_RADIUS};
+use crate::iced_helpers::{ALPHA, BORDER_RADIUS};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
     flavor: Flavor,
     pub accent: Color,
+    /// Colors things like headings
     pub misc_colors: [Color; 6],
+    pub bold: Color,
+    pub bold_italic: Color,
+    pub italic: Color,
+    pub link_internal: Color,
+    pub link_external: Color,
     pub text: Color,
     pub subtext1: Color,
     pub subtext0: Color,
@@ -194,7 +200,12 @@ impl ThemeConfig {
             crust: flavor_colors.crust.to_iced(),
             danger: flavor_colors.red.to_iced(),
             warning: flavor_colors.yellow.to_iced(),
-            success: flavor_colors.green.to_iced()
+            success: flavor_colors.green.to_iced(),
+            bold: flavor_colors.sky.to_iced(),
+            bold_italic: flavor_colors.sapphire.to_iced(),
+            italic: flavor_colors.green.to_iced(),
+            link_internal: flavor_colors.blue.to_iced(),
+            link_external: flavor_colors.teal.to_iced()
         }
     }
 }

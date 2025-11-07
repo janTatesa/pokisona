@@ -9,7 +9,7 @@ pub struct CommandHistory {
 impl CommandHistory {
     pub fn push(&mut self, command: String) {
         if self.content.last().is_none_or(|last| last != &command) {
-            self.content.push(command);
+            self.content.push(command.to_string());
         }
     }
 
@@ -18,11 +18,15 @@ impl CommandHistory {
     }
 
     pub fn select_up(&mut self) {
-        self.selected = Some(
-            self.selected
-                .unwrap_or(self.content.len())
-                .saturating_sub(1)
-        )
+        if self.content.is_empty() {
+            return;
+        }
+
+        let new = self
+            .selected
+            .unwrap_or(self.content.len())
+            .saturating_sub(1);
+        self.selected = Some(new)
     }
 
     pub fn select_down(&mut self) {

@@ -8,7 +8,7 @@ use pest_derive::Parser;
 use yoke::Yokeable;
 
 pub use crate::markdown::store::MarkdownStore;
-use crate::widget::Modifiers;
+use crate::iced_helpers::Modifiers;
 
 // TODO: it would be better to use chumsky as this parser is pretty slow
 #[derive(Parser)]
@@ -237,7 +237,7 @@ impl<'a> Line<'a> {
                             Some(rule) => panic!("Invalid rule inside link: {rule}"),
                             _ => Subtarget::None
                         };
-                        let display = target.next().map(|pair| pair.as_span());
+                        let display = inner.next().map(|pair| pair.as_span());
                         I::Link {
                             file_target,
                             subtarget,
