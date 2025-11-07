@@ -342,10 +342,7 @@ impl Pokisona {
             _ => vault_name.into()
         };
 
-        let bar = container(bar_content)
-            .color(theme.crust)
-            .border(BorderType::None)
-            .width(Length::Fill);
+        let bar = container(bar_content).width(Length::Fill);
         let hovered_link = self.hovered_link.as_ref().and_then(|link| {
             let element = match link {
                 HoveredLink::Internal(file_data) => file_data.content()?.inner().render(theme),

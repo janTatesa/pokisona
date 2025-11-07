@@ -80,7 +80,7 @@ impl Base for Theme {
 
     fn base(&self) -> Style {
         Style {
-            background_color: self.crust,
+            background_color: self.mantle,
             text_color: self.text
         }
     }
@@ -135,7 +135,7 @@ catalog!(selection_text, |theme| selection_text::Style {
 
 catalog!(text_input, text_input::Status, |theme, _| {
     text_input::Style {
-        background: Background::Color(theme.crust),
+        background: Background::Color(theme.mantle),
         border: Border::default(),
         placeholder: theme.subtext1,
         value: theme.text,
