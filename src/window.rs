@@ -361,7 +361,7 @@ impl Window {
             .color(theme.crust)
             .width(Length::Fill);
 
-        let content = column![container(main).stretched().padded(), bar].clip(true);
+        let content = column![container(main).stretched().padded(), bar];
         let border = if focused {
             BorderType::Focused
         } else {

@@ -3,7 +3,7 @@ use std::{rc::Rc, time::Duration};
 use color_eyre::Result;
 use iced::{
     Alignment::{self},
-    Event, Length, Task, event, exit,
+    Event, Length, Padding, Point, Task, Vector, event, exit, mouse,
     widget::{self, Id, column, operation::focus, row, stack},
     window
 };
@@ -15,7 +15,7 @@ use crate::{
     command_history::CommandHistory,
     config::{Config, Keybinding},
     file_store::{FileData, FileStore},
-    iced_helpers::{BorderType, Element, Link, container, text},
+    iced_helpers::{BORDER_WIDTH, BorderType, Element, Link, SPACING, container, text},
     markdown::Markdown,
     theme::Theme,
     window::{Direction, Window, WindowManager}
@@ -37,7 +37,8 @@ pub struct Pokisona {
     error_id: u64,
     error: Option<String>,
 
-    hovered_link: Option<HoveredLink>
+    hovered_link: Option<HoveredLink>,
+    mouse_pos: Point
 }
 
 enum HoveredLink {
@@ -57,6 +58,7 @@ pub enum Message {
     LinkClick(Link),
     Hover(Link),
     HoverEnd,
+    MouseMoved(Point),
 
     KeyEvent(Keybinding),
     ClearError(u64),
@@ -66,6 +68,10 @@ pub enum Message {
 
 impl Message {
     fn from_iced_event(event: Event, _: event::Status, _: window::Id) -> Option<Self> {
+        if let Event::Mouse(mouse::Event::CursorMoved { position }) = event {
+            return Some(Self::MouseMoved(position));
+        };
+
         if let Event::Keyboard(event) = event
             && let Some(keybinding) = Keybinding::from_iced_key_event(event)
         {
@@ -112,7 +118,8 @@ impl Pokisona {
                     command_history: CommandHistory::default(),
                     scale: config.scale.default,
                     hovered_link: None,
-                    file_store: Box::leak(Box::new(FileStore::default()))
+                    file_store: Box::leak(Box::new(FileStore::default())),
+                    mouse_pos: Point::ORIGIN
                 };
 
                 (app, task)
@@ -232,7 +239,8 @@ impl Pokisona {
                     Link::External(url) => HoveredLink::External(url.to_string())
                 });
             }
-            Message::HoverEnd => self.hovered_link = None
+            Message::HoverEnd => self.hovered_link = None,
+            Message::MouseMoved(point) => self.mouse_pos = point
         }
 
         Task::none()
@@ -346,23 +354,36 @@ impl Pokisona {
 
         let bar = container(bar_content).width(Length::Fill);
         let hovered_link = self.hovered_link.as_ref().and_then(|link| {
-            let element = match link {
-                HoveredLink::Internal(file_data) => file_data.content()?.inner().render(theme),
-                HoveredLink::Error(url) => text(url, theme.danger).into(),
-                HoveredLink::External(url) => text(url, theme.link_external).into()
-            };
-            Some(container(element).padded())
-        });
-
-        let hovered_link = container(hovered_link)
+            let hovered_link = match link {
+                HoveredLink::Internal(file_data) => {
+                    let bar = container(file_data.path().as_str())
+                        .align_x(Alignment::Center)
+                        .border(BorderType::TitleBarBottom)
+                        .custom_padding(Padding::default().left(SPACING).right(SPACING))
+                        .color(theme.crust);
+                    let content = container(file_data.content()?.inner().render(theme))
+                        .custom_padding(SPACING - BORDER_WIDTH);
+                    container(column![content, bar].padding(BORDER_WIDTH))
+                }
+                HoveredLink::Error(url) => container(text(url, theme.danger)).padded(),
+                HoveredLink::External(url) => container(text(url, theme.link_external)).padded()
+            }
             .color(theme.base)
             .border(BorderType::Normal);
-        let hovered_link = container(hovered_link).align_y(Alignment::End).stretched();
+            const CURSOR_HOVER_OFFSET: f32 = 8.;
+            let hovered_link_pos =
+                self.mouse_pos + Vector::new(CURSOR_HOVER_OFFSET, CURSOR_HOVER_OFFSET);
+            let padding = Padding::default()
+                .top(hovered_link_pos.y)
+                .left(hovered_link_pos.x);
+            let hovered_link = container(hovered_link).custom_padding(padding);
+            Some(hovered_link)
+        });
 
-        let windows = container(self.window_manager.render(self.theme())).stretched();
-        let ui = container(stack![windows, hovered_link])
+        let windows = container(self.window_manager.render(self.theme()))
             .padded()
             .stretched();
-        column![ui, bar].into()
+        let ui = column![windows, bar];
+        stack![ui, hovered_link].into()
     }
 }

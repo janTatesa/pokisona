@@ -7,7 +7,7 @@ use std::borrow::Cow;
 
 use bitflags::bitflags;
 use iced::{
-    Alignment, Background, Border, Color, Font, Length, Renderer, Shadow,
+    Alignment, Background, Border, Color, Font, Length, Padding, Renderer, Shadow,
     advanced::widget::Text,
     border::Radius,
     font::{self, Weight},
@@ -108,7 +108,7 @@ pub struct Container<'a> {
     width: Length,
     border: BorderType,
     color: Option<Color>,
-    padded: bool
+    padding: Padding
 }
 
 impl Container<'_> {
@@ -142,8 +142,15 @@ impl Container<'_> {
     }
 
     pub fn padded(self) -> Self {
-        let padded = true;
-        Self { padded, ..self }
+        let padding = SPACING.into();
+        Self { padding, ..self }
+    }
+
+    pub fn custom_padding(self, padding: impl Into<Padding>) -> Self {
+        Self {
+            padding: padding.into(),
+            ..self
+        }
     }
 }
 
@@ -180,7 +187,7 @@ impl<'a> From<Container<'a>> for Element<'a> {
             .align_y(val.align_y)
             .width(val.width)
             .height(val.height)
-            .padding(if val.padded { SPACING } else { 0.0 })
+            .padding(val.padding)
             .into()
     }
 }
@@ -195,7 +202,7 @@ pub fn container<'a>(content: impl Into<Element<'a>>) -> Container<'a> {
         width: Length::Shrink,
         border: BorderType::None,
         color: None,
-        padded: false
+        padding: Padding::default()
     }
 }
 
@@ -215,7 +222,6 @@ pub fn not_yet_supported<'a>() -> Element<'a> {
             shadow: shadow(*theme),
             snap: false
         })
-        .clip(true)
         .into()
 }
 
