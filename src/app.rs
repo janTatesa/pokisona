@@ -11,7 +11,7 @@ use smol::{Timer, fs};
 
 use crate::{
     PathBuf,
-    command::{Command, CommandKind},
+    command::Command,
     command_history::CommandHistory,
     config::{Config, Keybinding},
     file_store::{FileData, FileStore},
@@ -205,10 +205,7 @@ impl Pokisona {
             Message::ClearError(id) if self.error_id == id => self.error = None,
             Message::ClearError(_) => {}
             Message::InitialFileOpen(path) => {
-                return self.handle_command(Command {
-                    _force: false,
-                    kind: CommandKind::Open { path }
-                });
+                return self.handle_command(Command::Open { path });
             }
             Message::KeyEvent(event) => {
                 if let Some(command) = self.config.keybindings.get(&event) {
@@ -217,10 +214,7 @@ impl Pokisona {
             }
             Message::LinkClick(link) => {
                 return match link {
-                    Link::Internal(path) => self.handle_command(Command {
-                        _force: false,
-                        kind: CommandKind::Open { path }
-                    }),
+                    Link::Internal(path) => self.handle_command(Command::Open { path }),
                     Link::External(url) => open::that(url.as_str())
                         .map(|_| Task::none())
                         .unwrap_or_else(|error| Task::done(Message::Error(error.to_string()))),
@@ -248,51 +242,51 @@ impl Pokisona {
 
     fn handle_command(&mut self, command: Command) -> Task<Message> {
         let scale = self.config.scale;
-        match command.kind {
-            CommandKind::Quit => {
+        match command {
+            Command::Quit => {
                 if self.window_manager.remove_window().is_none() {
                     return exit();
                 }
             }
-            CommandKind::QuitAll => return exit(),
-            CommandKind::Open { path } => {
+            Command::QuitAll => return exit(),
+            Command::Open { path } => {
                 let (data, task) = self.open_file(path);
                 *self.window_manager.current_window_mut() = Window::Markdown(data);
                 return task;
             }
 
-            CommandKind::Split { path } => {
+            Command::Split { path } => {
                 let (window, task) = match path {
                     Some(path) => {
                         let (data, task) = self.open_file(path);
                         (Window::Markdown(data), task)
                     }
-                    None => (Window::Empty, Task::none())
+                    None => (self.window_manager.current_window().clone(), Task::none())
                 };
 
                 self.window_manager.split(window);
                 return task;
             }
-            CommandKind::VSplit { path } => {
+            Command::VSplit { path } => {
                 let (window, task) = match path {
                     Some(path) => {
                         let (data, task) = self.open_file(path);
                         (Window::Markdown(data), task)
                     }
-                    None => (Window::Empty, Task::none())
+                    None => (self.window_manager.current_window().clone(), Task::none())
                 };
 
                 self.window_manager
                     .split_at_direction(window, Direction::Vertical);
                 return task;
             }
-            CommandKind::HSplit { path } => {
+            Command::HSplit { path } => {
                 let (window, task) = match path {
                     Some(path) => {
                         let (data, task) = self.open_file(path);
                         (Window::Markdown(data), task)
                     }
-                    None => (Window::Empty, Task::none())
+                    None => (self.window_manager.current_window().clone(), Task::none())
                 };
 
                 self.window_manager
@@ -300,24 +294,24 @@ impl Pokisona {
                 return task;
             }
 
-            CommandKind::TransposeWindows => self.window_manager.transpose_windows(),
-            CommandKind::NextWindow => self.window_manager.next_window(),
-            CommandKind::PreviousWindow => self.window_manager.previous_window(),
+            Command::TransposeWindows => self.window_manager.transpose_windows(),
+            Command::NextWindow => self.window_manager.next_window(),
+            Command::PreviousWindow => self.window_manager.previous_window(),
 
-            CommandKind::ScaleUp => self.scale += scale.default_step,
-            CommandKind::ScaleDown => {
+            Command::ScaleUp => self.scale += scale.default_step,
+            Command::ScaleDown => {
                 let scale = self.scale - scale.default_step;
                 if scale > 0. {
                     self.scale = scale;
                 }
             }
-            CommandKind::ScaleReset => self.scale = scale.default,
+            Command::ScaleReset => self.scale = scale.default,
 
-            CommandKind::HistoryUp => self.command_history.select_up(),
-            CommandKind::HistoryDown => self.command_history.select_down(),
-            CommandKind::CommandModeOpen => self.typed_command = Some(String::new()),
-            CommandKind::Noop => {}
-            CommandKind::CommandModeExit => self.typed_command = None
+            Command::HistoryUp => self.command_history.select_up(),
+            Command::HistoryDown => self.command_history.select_down(),
+            Command::CommandModeOpen => self.typed_command = Some(String::new()),
+            Command::Noop => {}
+            Command::CommandModeExit => self.typed_command = None
         }
 
         Task::none()
@@ -358,12 +352,16 @@ impl Pokisona {
                 HoveredLink::Internal(file_data) => {
                     let bar = container(file_data.path().as_str())
                         .align_x(Alignment::Center)
+                        .width(Length::Fill)
                         .border(BorderType::TitleBarBottom)
                         .custom_padding(Padding::default().left(SPACING).right(SPACING))
                         .color(theme.crust);
-                    let content = container(file_data.content()?.inner().render(theme))
-                        .custom_padding(SPACING - BORDER_WIDTH);
-                    container(column![content, bar].padding(BORDER_WIDTH))
+                    let content = container(file_data.content()?.inner().render(theme)).padded();
+                    container(
+                        column![content, bar]
+                            .padding(BORDER_WIDTH)
+                            .width(Length::Fill)
+                    )
                 }
                 HoveredLink::Error(url) => container(text(url, theme.danger)).padded(),
                 HoveredLink::External(url) => container(text(url, theme.link_external)).padded()

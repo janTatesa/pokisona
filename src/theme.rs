@@ -3,7 +3,7 @@ use iced::{
     Background, Border, Color,
     theme::{Base, Mode, Palette, Style},
     widget::{
-        container,
+        checkbox, container,
         rule::{self, FillMode},
         text, text_input
     }
@@ -11,7 +11,7 @@ use iced::{
 use iced_selection::text as selection_text;
 use serde::Deserialize;
 
-use crate::iced_helpers::{ALPHA, BORDER_RADIUS};
+use crate::iced_helpers::{ALPHA, BORDER_RADIUS, BORDER_WIDTH};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
@@ -150,6 +150,36 @@ catalog!(rule, |theme| rule::Style {
     fill_mode: FillMode::Full,
     snap: false
 });
+
+catalog!(checkbox, checkbox::Status, default_checkbox_style);
+// TODO: maybe behave differently when it's disabled
+fn default_checkbox_style(theme: &Theme, status: checkbox::Status) -> checkbox::Style {
+    use checkbox::Status as S;
+    let border = if matches!(status, S::Hovered { .. }) {
+        Border::default()
+            .rounded(BORDER_RADIUS)
+            .width(BORDER_WIDTH)
+            .color(theme.accent)
+    } else {
+        Default::default()
+    };
+
+    let background = if let S::Active { is_checked: true }
+    | S::Hovered { is_checked: true }
+    | S::Disabled { is_checked: true } = status
+    {
+        Background::Color(theme.accent)
+    } else {
+        Background::Color(Color::TRANSPARENT)
+    };
+
+    checkbox::Style {
+        background,
+        icon_color: theme.crust,
+        border,
+        text_color: None
+    }
+}
 
 impl ThemeConfig {
     pub fn theme(&self) -> Theme {

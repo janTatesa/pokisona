@@ -5,23 +5,24 @@ use std::{
 };
 
 use iced::widget::{self, Column, space};
-use itertools::{Either, Itertools, put_back};
+use itertools::{Either, chain};
 use url::Url;
 
-use super::{Block, BlockKind, Line, LineItem, Markdown};
+use super::{Block, BlockKind, Markdown, ParagraphItem};
 use crate::{
     PathBuf,
     iced_helpers::{
-        BORDER_WIDTH, Element, Link, Modifiers, SPACING, Span, not_yet_supported, rich_text
+        BORDER_WIDTH, Element, Link, Modifiers, SPACING, Span, not_yet_supported, rich_text, span
     },
+    markdown::ListItemType,
     theme::Theme
 };
 impl<'a> Markdown<'a> {
     pub fn render(&'a self, theme: Theme) -> Element<'a> {
-        let iter = self
+        let iter = dbg!(self)
             .yaml
             .as_ref()
-            .map(|_| not_yet_supported())
+            .map(|_| not_yet_supported("yaml frontmatters").into_element(theme, None))
             .into_iter()
             .chain(self.content.iter().map(|block| block.render(theme)));
         Column::from_iter(iter).spacing(SPACING).into()
@@ -30,33 +31,50 @@ impl<'a> Markdown<'a> {
 
 impl<'a> Block<'a> {
     fn render(&'a self, theme: Theme) -> Element<'a> {
+        const BULLET: &str = "\u{2022}";
         match &self.kind {
-            BlockKind::Line(line) => widget::row(LineItemIterWrapper {
-                inner: LineItemIter::new(line, Modifiers::empty()).peekable(),
-                heading: None,
-                theme
-            })
-            .spacing(SPACING)
-            .into(),
+            BlockKind::Paragraph(line) => rich_text(
+                theme,
+                ParagraphItemIter::new(line, Modifiers::empty()),
+                None
+            ),
+            BlockKind::ListItem(item) => {
+                let beginning = match item.kind {
+                    ListItemType::Bullet => {
+                        Either::Left(iter::once(widget::text(BULLET).color(theme.accent).into()))
+                    }
+                    ListItemType::Numbered(num) => {
+                        Either::Left(iter::once(widget::text(num).color(theme.accent).into()))
+                    }
+                    ListItemType::Task(checked) => Either::Right([
+                        widget::text(BULLET).color(theme.accent).into(),
+                        widget::checkbox("", checked).into()
+                    ])
+                }
+                .into_iter();
+                let content = ParagraphItemIter::new(&item.content, Modifiers::empty());
+                let content = rich_text(theme, content, None);
+                widget::row(chain![beginning, iter::once(content)]).into()
+            }
             BlockKind::Code { .. }
-            | BlockKind::ListItem(_)
             | BlockKind::Quote { .. }
             | BlockKind::Callout { .. }
-            | BlockKind::Math { .. } => not_yet_supported(),
+            | BlockKind::Math { .. } => {
+                not_yet_supported("math blocks, code blocks, quotes, callouts")
+                    .into_element(theme, None)
+            }
+            // TODO: make them collapsable
             BlockKind::Heading {
                 nesting,
                 title,
                 content,
                 ..
             } => widget::column(
-                iter::once(
-                    widget::row(LineItemIterWrapper {
-                        inner: LineItemIter::new(title, Modifiers::empty()).peekable(),
-                        heading: Some(*nesting),
-                        theme
-                    })
-                    .into()
-                )
+                iter::once(rich_text(
+                    theme,
+                    ParagraphItemIter::new(title, Modifiers::empty()),
+                    Some(*nesting)
+                ))
                 .chain(content.iter().map(|block| block.render(theme)))
             )
             .into(),
@@ -66,115 +84,68 @@ impl<'a> Block<'a> {
     }
 }
 
-// TODO: simplify this
-// sis literally needed to create two itterators for such a simple task as making modified spans unified in a single rich text, and even that's incomplete
-// what's wrong with me
-struct LineItemIterWrapper<'a> {
-    inner: Peekable<LineItemIter<'a>>,
-    heading: Option<u8>,
-    theme: Theme
-}
-
-impl<'a> Iterator for LineItemIterWrapper<'a> {
-    type Item = Element<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let widget = self.inner.next()?.right_or_else(|span| {
-            // TODO: When put back is turned to a method, use it instead
-            let mut put_back = put_back(&mut self.inner);
-            let iter = iter::once(span)
-                .chain(put_back.peeking_map_while(|item| item.map_right(Either::Right)));
-            rich_text(self.theme, iter, self.heading)
-        });
-
-        Some(widget)
-    }
-}
-
-struct LineItemIter<'a> {
+struct ParagraphItemIter<'a> {
     modifiers: Modifiers,
-    inner: Peekable<slice::Iter<'a, LineItem<'a>>>,
-    nested: Option<Box<LineItemIter<'a>>>
+    inner: Peekable<slice::Iter<'a, ParagraphItem<'a>>>,
+    nested: Option<Box<ParagraphItemIter<'a>>>
 }
 
-impl<'a> LineItemIter<'a> {
-    fn new(line: &'a Line<'a>, modifiers: Modifiers) -> Self {
+impl<'a> ParagraphItemIter<'a> {
+    fn new(inner: &'a [ParagraphItem<'a>], modifiers: Modifiers) -> Self {
         Self {
-            inner: line.0.iter().peekable(),
+            inner: inner.iter().peekable(),
             nested: None,
             modifiers
         }
     }
 }
 
-impl<'a> Iterator for LineItemIter<'a> {
-    type Item = Either<Span<'a>, Element<'a>>;
+impl<'a> Iterator for ParagraphItemIter<'a> {
+    type Item = Span<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        use super::LineItemKind as I;
-        if let Some(widget) = self.nested.as_mut().and_then(|iter| iter.next()) {
+        use super::ParagraphItemKind as I;
+        if let Some(iter) = self.nested.as_mut()
+            && let Some(widget) = iter.next()
+        {
             return Some(widget);
         }
 
         let line_item = self.inner.next()?;
-        let widget = match &line_item.kind {
+        let content = line_item.span.as_str();
+        let modifiers = match &line_item.kind {
             I::ModifierSpan(modifiers, line) => {
                 self.nested = Some(Box::new(Self::new(line, self.modifiers | *modifiers)));
                 return self.next();
             }
-            I::Text => {
-                return Some(Either::Left(Span {
-                    modifiers: self.modifiers,
-                    text: line_item.span.as_str().into(),
-                    link: None
-                }));
+            I::Text => span(content),
+            I::SoftBreak => span("\\\n"),
+            I::EscapedChar => span(&line_item.span.as_str()[1..]),
+            I::InlineCodeBlock { inner } => span(inner.as_str()).modifiers(Modifiers::CODE),
+            I::InlineMathBlock { .. } | I::ExternalEmbed { .. } | I::Embed { .. } => {
+                not_yet_supported("math blocks, embeds")
             }
-            I::InlineCodeBlock { inner } => {
-                return Some(Either::Left(Span {
-                    modifiers: self.modifiers | Modifiers::CODE,
-                    text: inner.as_str().into(),
-                    link: None
-                }));
-            }
-
-            I::InlineMathBlock { .. }
-            | I::SoftBreak
-            | I::EscapedChar
-            | I::ExternalEmbed { .. }
-            | I::Embed { .. } => not_yet_supported(),
-            I::Tag => {
-                return Some(Either::Left(Span {
-                    modifiers: self.modifiers | Modifiers::TAG,
-                    text: line_item.span.as_str().into(),
-                    link: None
-                }));
-            }
-
-            I::Reference => {
-                return Some(Either::Left(Span {
-                    modifiers: self.modifiers | Modifiers::REFERENCE,
-                    text: line_item.span.as_str().into(),
-                    link: None
-                }));
-            }
+            I::Tag => span(content).modifiers(Modifiers::TAG),
+            I::Reference => span(content).modifiers(Modifiers::REFERENCE),
             I::Link {
                 file_target,
                 display,
                 ..
             } => {
-                let path = PathBuf::from(file_target.as_str());
+                let mut path = PathBuf::from(file_target.as_str());
+                // TODO: Not robust enough
+                // IO should be async for example
+                if path.extension().is_none() {
+                    path.set_extension("md");
+                }
+
                 let link = if path.exists() {
                     Link::Internal(path)
                 } else {
                     Link::NonExistentInternal(path)
                 };
 
-                return Some(Either::Left(Span {
-                    modifiers: self.modifiers,
-                    text: display.unwrap_or(*file_target).as_str().into(),
-                    // TODO: All IO should be async
-                    link: Some(link)
-                }));
+                span(display.unwrap_or(*file_target).as_str()).link(link)
             }
             I::ExternalLink {
                 target, display, ..
@@ -182,15 +153,11 @@ impl<'a> Iterator for LineItemIter<'a> {
                 let link = Url::from_str(target.as_str())
                     .map(Link::External)
                     .unwrap_or(Link::InvalidUrlExternal(target.as_str().to_string()));
-                return Some(Either::Left(Span {
-                    modifiers: self.modifiers,
-                    text: display.unwrap_or(*target).as_str().into(),
-                    link: Some(link)
-                }));
+                span(display.unwrap_or(*target).as_str()).link(link)
             }
-            I::Comment => space().into()
-        };
-
-        Some(Either::Right(widget))
+            I::Comment => span("")
+        }
+        .modifiers(self.modifiers);
+        Some(modifiers)
     }
 }

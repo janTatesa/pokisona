@@ -1,6 +1,6 @@
 word = _{ (!WHITE_SPACE ~ ANY)+ }
 
-modifier_inner = _{ (!PEEK ~ (line_item | text_wrapped))+ }
+modifier_inner = _{ (!PEEK ~ (paragraph_item | text_wrapped))+ }
 italic         =  { PUSH("*" | "_") ~ modifier_inner ~ POP }
 bold           =  { PUSH("**" | "__") ~ modifier_inner ~ POP }
 bold_italic    =  { PUSH("***" | "___") ~ modifier_inner ~ POP }
@@ -20,19 +20,23 @@ math_block_inner = { (!("$$") ~ ANY)* }
 
 callout_type  = { (!("]" | WHITE_SPACE) ~ ANY)+ }
 callout_title =  { (!NEWLINE ~ ANY)+ }
-callout       =  { ">" ~ " " ~ "[!" ~ callout_type ~ "]" ~ callout_title? ~ NEWLINE ~ (">" ~ " "? ~ line ~ hard_break)* }
-quote         =  { (">" ~ " "? ~ line ~ (NEWLINE | &EOI))+ }
+callout       =  { ">" ~ " " ~ "[!" ~ callout_type ~ "]" ~ callout_title? ~ NEWLINE ~ (">" ~ " "? ~ line)* }
+quote         =  { (">" ~ " "? ~ line)+ }
 
-line_item    = _{soft_break | escaped_char | comment | external_embed | external_link | embed | link | inline_code_block | inline_math_block | bold_italic | bold | italic | highlight | strikethrough | math_block | tag | reference }
-text_wrapped =  { (!(PEEK | line_item | NEWLINE) ~ ANY)+ }
-text         =  { (!(line_item | NEWLINE) ~ ANY)+ }
+paragraph_item    = _{soft_break | escaped_char | comment | external_embed | external_link | embed | link | inline_code_block | inline_math_block | bold_italic | bold | italic | highlight | strikethrough | math_block | tag | reference }
+text_wrapped =  { (!(PEEK | paragraph_item | NEWLINE) ~ ANY)+ }
+text         =  { (!(paragraph_item | paragraph_break) ~ ANY)+ }
+paragraph = {(!(paragraph_break | body_item) ~ (text | paragraph_item))+ ~ (paragraph_break | body_item | &EOI) }
+line = {(!hard_break ~ (text | paragraph_item))* ~ hard_break}
+
+paragraph_break = _{"\n" ~ "\n"+}
 
 tag       = { "#" ~ word }
 // TODO: references should be attached to a specific item
 reference = { "^" ~ word } 
 
 indentation = { "\t"  | "  " }
-list_item   = { PUSH(indentation*) ~ (task_done | task_due | bullet | numbered) ~ " " ~ line ~ hard_break ~ list_item_indented* ~ DROP }
+list_item   = { PUSH(indentation*) ~ (task_done | task_due | bullet | numbered) ~ " " ~ line ~  list_item_indented* ~ DROP }
 list_item_indented = _{&(PEEK ~ indentation+) ~ list_item}
 bullet      = { "-" }
 task_due    = { "- [ ]" }
@@ -60,13 +64,10 @@ escaped_char = { "\\" ~ ANY }
 soft_break   = { "\\" ~ NEWLINE }
 hard_break = _{NEWLINE | &EOI}
 
-heading_sharps = {!"#######" ~ "#"+ }
+heading_sharps = {"#"{1, 6} }
 heading        = { &(PEEK ~ "#"+) ~ heading_title_full ~ hard_break ~ body? ~ DROP }
 heading_title_full = { PUSH(heading_sharps) ~ " " ~ heading_title }
-heading_title  = { (text | line_item)+ }
-
-line = { (text | line_item)+ }
-
+heading_title  = { (text | paragraph_item)+ }
 
 ruler = { "---" }
 
@@ -74,7 +75,7 @@ frontmatter_inner = { (!(NEWLINE ~ "---" ~ (NEWLINE | &EOI)) ~ ANY)* }
 frontmatter       = { "---" ~ NEWLINE ~ frontmatter_inner ~ NEWLINE ~ "---" }
 
 body_item = _{NEWLINE | comment | ruler | callout | quote | list_item | code_block | math_block}
-body       = _{ (!(heading_sharps ~ " ") ~ ((!(escaped_char | soft_break) ~ body_item) | line))* ~ heading*}
+body       = _{ (!(heading_sharps ~ " ") ~ ((!(escaped_char | soft_break) ~ body_item) | paragraph))* ~ heading*}
 main       = _{ SOI ~ frontmatter? ~ PUSH_LITERAL("") ~ body }
 
 comment_inner =  { (!"%%" ~ ANY)* }

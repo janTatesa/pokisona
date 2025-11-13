@@ -38,7 +38,9 @@ impl Drop for FileData {
 impl FileStore {
     // Returns the reference to file data and also if the reference was newly created
     pub fn get_ref(&'static self, path: PathBuf) -> (Rc<FileData>, bool) {
-        if let Some(data) = self.0.get(&path).and_then(|weak| weak.upgrade()) {
+        if let Some(weak) = self.0.get(&path)
+            && let Some(data) = weak.upgrade()
+        {
             return (data, false);
         }
 
@@ -53,7 +55,8 @@ impl FileStore {
     }
 
     pub fn insert(&self, path: &Path, content: MarkdownStore) {
-        if let Some(data) = self.0.get(path).and_then(|weak| weak.upgrade())
+        if let Some(weak) = self.0.get(path)
+            && let Some(data) = weak.upgrade()
             && data.content.set(content).is_err()
         {
             panic!("Attemted to read a single file twice")

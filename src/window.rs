@@ -6,13 +6,13 @@ use std::{
 };
 
 use iced::{
-    Alignment, Length,
-    widget::{Column, Row, column}
+    Alignment, Length, Padding,
+    widget::{self, Column, Row, column}
 };
 
 use crate::{
     file_store::FileData,
-    iced_helpers::{BorderType, Element, SPACING, container},
+    iced_helpers::{BORDER_WIDTH, BorderType, Element, SPACING, container},
     theme::Theme
 };
 #[derive(Clone, Debug)]
@@ -355,21 +355,24 @@ impl Window {
             )
         };
 
-        let bar = container(bar)
+        let (border, padding, bar_color) = if focused {
+            (BorderType::Focused, BORDER_WIDTH.into(), theme.text)
+        } else {
+            (BorderType::Invisible, Padding::default(), theme.subtext0)
+        };
+
+        // TODO bar border radius doesn't match the containers
+        let bar = container(widget::text(bar).color(bar_color))
             .align_x(Alignment::Center)
             .border(BorderType::TitleBarBottom)
             .color(theme.crust)
             .width(Length::Fill);
 
         let content = column![container(main).stretched().padded(), bar];
-        let border = if focused {
-            BorderType::Focused
-        } else {
-            BorderType::Invisible
-        };
 
         container(content)
             .border(border)
+            .custom_padding(padding)
             .color(theme.base)
             .stretched()
             .into()

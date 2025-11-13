@@ -1,0 +1,7 @@
+// While it might seem overkill to parse them with pest, we'll evetually make them more complex
+
+ident = { (ASCII_ALPHA | "-")+ }
+// TODO: support ' in paths by backslashes
+path_spaced    =  { !"'" ~ ANY+ }
+path_spaceless =  { (!WHITE_SPACE ~ ANY)+ }
+main           = _{ ident ~ (WHITE_SPACE+ ~ (path_spaceless | "'" ~ path_spaced ~ "'"))? }

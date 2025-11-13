@@ -3,6 +3,7 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    pest-ide-tools.url = "github:pest-parser/pest-ide-tools";
     rust-overlay = {
       url = "github:oxalica/rust-overlay";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -26,7 +27,7 @@
                 inherit system;
                 overlays = [
                   inputs.rust-overlay.overlays.default
-
+                  (final: prev: { pest-ide-tools = inputs.pest-ide-tools.packages.${system}.default; })
                 ];
               };
             }
@@ -39,6 +40,8 @@
           default = pkgs.mkShell {
             packages = with pkgs; [
               pkg-config
+              pest-ide-tools
+              openssl
               pkgs.rust-bin.nightly.latest.rustfmt
               (pkgs.rust-bin.stable.latest.default.override {
                 extensions = [

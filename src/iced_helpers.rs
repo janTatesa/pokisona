@@ -1,9 +1,4 @@
-//! Widgets for pokisona
-//! The reason this is necessary is to enforce a consistent UI, the performance cost is worth it.
-//! An alternative would be to create fiunctions but that wouldn't be enforced
-//! Just like the rest of the project this is shitty and incomplete
-
-use std::borrow::Cow;
+use std::iter::{self, Peekable};
 
 use bitflags::bitflags;
 use iced::{
@@ -13,7 +8,7 @@ use iced::{
     font::{self, Weight},
     widget
 };
-use iced_selection::text::{IntoFragment, Rich};
+use iced_selection::text::{Fragment, IntoFragment, Rich};
 use url::Url;
 
 use crate::{PathBuf, app::Message, theme::Theme};
@@ -23,12 +18,19 @@ pub const SPACING: f32 = 5.0;
 pub const ALPHA: f32 = 0.2;
 pub const DEFAULT_FONT_SIZE: f32 = 16.;
 
-pub fn rich_text<'a>(
+struct SpanIter<I: Iterator> {
+    previous_with_bg: bool,
     theme: Theme,
-    spans: impl IntoIterator<Item = Span<'a>>,
-    heading: Option<u8>
-) -> Element<'a> {
-    Rich::from_iter(spans.into_iter().map(|span| {
+    heading: Option<u8>,
+    spans: Peekable<I>
+}
+
+impl<'a, I: Iterator<Item = Span<'a>>> Iterator for SpanIter<I> {
+    type Item = iced_selection::text::Span<'a, Link>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let span = self.spans.next()?;
+        let theme = self.theme;
         let mut font = Font::default();
         let modifiers = &span.modifiers;
         if modifiers.contains(Modifiers::BOLD) {
@@ -43,10 +45,11 @@ pub fn rich_text<'a>(
             _ if modifiers.contains(Modifiers::TAG) => Some(theme.accent),
             _ if modifiers.contains(Modifiers::CODE) => Some(theme.crust),
             _ if modifiers.contains(Modifiers::HIGHLIGHT) => Some(theme.accent.scale_alpha(ALPHA)),
+            _ if modifiers.contains(Modifiers::UNSUPPORTED) => Some(theme.surface0),
             _ => None
         };
 
-        let fg = match (span.link.as_ref(), heading) {
+        let fg = match (span.link.as_ref(), self.heading) {
             (Some(Link::Internal(_)), _) => theme.link_internal,
             (Some(Link::External(_)), _) => theme.link_external,
             (Some(Link::NonExistentInternal(_) | Link::InvalidUrlExternal(_)), _) => theme.danger,
@@ -61,14 +64,45 @@ pub fn rich_text<'a>(
             _ => theme.text
         };
 
-        iced_selection::span(span.text)
+        let has_bg =
+            Modifiers::TAG | Modifiers::CODE | Modifiers::HIGHLIGHT | Modifiers::UNSUPPORTED;
+        let next_with_bg = self
+            .spans
+            .peek()
+            .is_some_and(|span| span.modifiers.intersects(has_bg));
+
+        let radius = match (self.previous_with_bg, bg.is_some(), next_with_bg) {
+            (true, true, false) => Radius::default().right(BORDER_RADIUS),
+            (false, true, true) => Radius::default().left(BORDER_RADIUS),
+            (false, true, false) => BORDER_RADIUS.into(),
+            _ => Default::default()
+        };
+
+        self.previous_with_bg = bg.is_some();
+
+        // TODO: Ideally there should be a padding for bordered elements but it's quite quirky
+        let border = iced_selection::span(span.text)
             .strikethrough(modifiers.contains(Modifiers::STRIKETHROUGH))
             .background_maybe(bg)
             .color(fg)
             .font(font)
             .link_maybe(span.link)
-            .border(Border::default().rounded(BORDER_RADIUS))
-    }))
+            .border(Border::default().rounded(radius));
+        Some(border)
+    }
+}
+
+pub fn rich_text<'a>(
+    theme: Theme,
+    spans: impl IntoIterator<Item = Span<'a>>,
+    heading: Option<u8>
+) -> Element<'a> {
+    Rich::from_iter(SpanIter {
+        previous_with_bg: false,
+        theme,
+        heading,
+        spans: spans.into_iter().peekable()
+    })
     .size(DEFAULT_FONT_SIZE + (6 - heading.unwrap_or(6)) as f32 * 2.)
     .on_link_click(Message::LinkClick)
     .on_link_hover(Message::Hover)
@@ -208,28 +242,44 @@ pub fn container<'a>(content: impl Into<Element<'a>>) -> Container<'a> {
 
 /// An indicator that the ui element is not yet supported. Useful for prototyping
 /// A production release shouldn't have UI elements that are not yet implemented so it's enabled only for debug mode
-// TODO: It looks terrible tbh
 #[cfg(debug_assertions)]
-pub fn not_yet_supported<'a>() -> Element<'a> {
-    widget::container("Not yet supported")
-        .style(|theme: &Theme| widget::container::Style {
-            text_color: Some(theme.danger),
-            background: Some(Background::Color(theme.surface0)),
-            border: Border::default()
-                .width(BORDER_WIDTH)
-                .rounded(BORDER_RADIUS)
-                .color(theme.surface1),
-            shadow: shadow(*theme),
-            snap: false
-        })
-        .into()
+pub fn not_yet_supported(item: &'static str) -> Span<'static> {
+    Span {
+        modifiers: Modifiers::UNSUPPORTED,
+        link: None,
+        text: format!("Rendering {item} is not yet supported.").into()
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Span<'a> {
-    pub modifiers: Modifiers,
-    pub link: Option<Link>,
-    pub text: Cow<'a, str>
+    modifiers: Modifiers,
+    link: Option<Link>,
+    text: Fragment<'a>
+}
+
+impl<'a> Span<'a> {
+    pub fn modifiers(self, modifiers: Modifiers) -> Self {
+        let modifiers = modifiers | self.modifiers;
+        Self { modifiers, ..self }
+    }
+
+    pub fn link(self, link: Link) -> Self {
+        let link = Some(link);
+        Self { link, ..self }
+    }
+
+    pub fn into_element(self, theme: Theme, heading: Option<u8>) -> Element<'a> {
+        rich_text(theme, iter::once(self), heading)
+    }
+}
+
+pub fn span<'a>(content: impl IntoFragment<'a>) -> Span<'a> {
+    Span {
+        modifiers: Modifiers::empty(),
+        link: None,
+        text: content.into_fragment()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -245,7 +295,7 @@ pub enum Link {
 // TODO: Bitflags make me do long if else chains instead of match arms, maybe a struct of bools would be better
 bitflags! {
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    pub struct Modifiers: u8 {
+    pub struct Modifiers: u16 {
         const BOLD = 1 << 0;
         const ITALIC = 1 << 1;
         const HIGHLIGHT = 1 << 2;
@@ -253,5 +303,6 @@ bitflags! {
         const CODE = 1 << 4;
         const TAG = 1 << 5;
         const REFERENCE = 1 << 7;
+        const UNSUPPORTED = 1 << 8;
     }
 }
