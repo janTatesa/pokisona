@@ -4,20 +4,21 @@ mod theme;
 
 use iced::{
     Alignment::{self},
-    Border, Length, Padding, Shadow, Vector, border,
+    Border, Length, Padding, Shadow, Vector,
+    border::{self, Radius},
     widget::{
         self, PaneGrid, column,
         pane_grid::{Content, Controls, DragEvent, TitleBar},
         row, stack
     }
 };
-use iced_helpers::{BORDER_WIDTH, BorderType, SPACING_AND_PADDING, container, text};
+use iced_helpers::{BORDER_WIDTH, container, text};
 pub use theme::Theme;
 
 use crate::{
     Element, ElementId, HoveredLink, Message, Pokisona,
     command::Command,
-    view::iced_helpers::{button, button_enabled_if}
+    view::iced_helpers::{BORDER_RADIUS, PADDING, SPACING, button, button_enabled_if}
 };
 
 impl Pokisona {
@@ -54,29 +55,29 @@ impl Pokisona {
             .background(theme.crust)
             .width(Length::Fill);
         let hovered_link = self.hovered_link.as_ref().and_then(|link| {
+            let border = border::rounded(BORDER_RADIUS)
+                .color(theme.overlay0)
+                .width(BORDER_WIDTH);
+
             let hovered_link = match link {
                 HoveredLink::Internal(file_data) => {
                     let bar = container(file_data.path().as_str())
                         .align_x(Alignment::Center)
                         .width(Length::Fill)
-                        .border(BorderType::HoveredLinkTitle)
-                        .custom_padding(
-                            Padding::default()
-                                .left(SPACING_AND_PADDING)
-                                .right(SPACING_AND_PADDING)
-                        )
+                        .border(border::rounded(Radius::default().bottom(BORDER_RADIUS)))
+                        .custom_padding(Padding::default().left(PADDING).right(PADDING))
                         .background(theme.crust);
                     let content = container(file_data.content()?.view(theme)).padded();
-                    let content = column![content, bar]
-                        .padding(BORDER_WIDTH)
-                        .width(Length::Fill);
+                    let content = column![content, bar].padding(BORDER_WIDTH);
+
                     container(content)
                 }
                 HoveredLink::Error(url) => container(text(url, theme.danger)).padded(),
                 HoveredLink::External(url) => container(text(url, theme.link_external)).padded()
             }
             .background(theme.base)
-            .border(BorderType::Normal);
+            .border(border)
+            .shadowed();
             const CURSOR_HOVER_OFFSET: f32 = 8.;
             let hovered_link_pos =
                 self.mouse_pos + Vector::new(CURSOR_HOVER_OFFSET, CURSOR_HOVER_OFFSET);
@@ -131,18 +132,18 @@ impl Pokisona {
                     ),
                     button(Command::Quit(Some(pane)), text_color)
                 ]
-                .spacing(SPACING_AND_PADDING)
+                .spacing(SPACING)
             };
 
             // HACK: this is the only way to currently have both centered title while controls being displayed. The compact controls are always displayed.
             let controls = Controls::dynamic("This shouldn't be displayed", controls());
 
-            let content = row![
+            let title = row![
                 container(text("Normal", theme.crust)).background(theme.accent),
                 widget::container(text(title, text_color)).center_x(Length::Fill)
             ]
-            .spacing(SPACING_AND_PADDING);
-            let title_bar = TitleBar::new(content)
+            .spacing(SPACING);
+            let title_bar = TitleBar::new(title)
                 .always_show_controls()
                 .controls(controls)
                 .style(move |_| widget::container::Style {

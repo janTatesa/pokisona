@@ -214,7 +214,7 @@ impl Pokisona {
             Command::QuitAll => return exit(),
             Command::Open { mut path } => {
                 if path.extension().is_none() {
-                    path.set_extension(".md");
+                    path.set_extension("md");
                 }
 
                 let (file, task) = self.file_store.open_file(path);

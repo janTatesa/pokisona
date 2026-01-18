@@ -12,7 +12,8 @@ use lucide_icons::Icon;
 
 use crate::{Element, Link, Message, command::Command, markdown::Modifiers, view::Theme};
 
-pub const SPACING_AND_PADDING: f32 = 5.0;
+pub const PADDING: f32 = 5.0;
+pub const SPACING: f32 = 5.0;
 pub const ALPHA: f32 = 0.2;
 pub const DEFAULT_FONT_SIZE: f32 = 16.;
 
@@ -111,7 +112,7 @@ pub fn text<'a>(str: impl IntoFragment<'a>, color: Color) -> Text<'a, Theme, Ren
     widget::text(str).color(color)
 }
 
-const SHADOW_BLUR: f32 = 4.;
+const SHADOW_BLUR: f32 = 16.;
 pub fn shadow(theme: Theme) -> Shadow {
     Shadow {
         color: theme.crust,
@@ -122,14 +123,6 @@ pub fn shadow(theme: Theme) -> Shadow {
 
 pub const BORDER_WIDTH: f32 = 2.;
 pub const BORDER_RADIUS: f32 = 3.;
-#[derive(Clone, Copy)]
-pub enum BorderType {
-    Focused,
-    Normal,
-    Invisible,
-    HoveredLinkTitle,
-    None
-}
 
 pub struct Container<'a> {
     inner: Element<'a>,
@@ -137,7 +130,8 @@ pub struct Container<'a> {
     align_y: Alignment,
     height: Length,
     width: Length,
-    border: BorderType,
+    border: Border,
+    shadowed: bool,
     color: Option<Color>,
     padding: Padding
 }
@@ -159,7 +153,7 @@ impl Container<'_> {
         Self { width, ..self }
     }
 
-    pub fn border(self, border: BorderType) -> Self {
+    pub fn border(self, border: Border) -> Self {
         Self { border, ..self }
     }
 
@@ -173,15 +167,18 @@ impl Container<'_> {
     }
 
     pub fn padded(self) -> Self {
-        let padding = SPACING_AND_PADDING.into();
+        let padding = PADDING.into();
         Self { padding, ..self }
     }
 
     pub fn custom_padding(self, padding: impl Into<Padding>) -> Self {
-        Self {
-            padding: padding.into(),
-            ..self
-        }
+        let padding = padding.into();
+        Self { padding, ..self }
+    }
+
+    pub fn shadowed(self) -> Self {
+        let shadowed = true;
+        Self { shadowed, ..self }
     }
 }
 
@@ -191,26 +188,11 @@ impl<'a> From<Container<'a>> for Element<'a> {
             .style(move |theme: &Theme| widget::container::Style {
                 text_color: None,
                 background: val.color.map(Background::Color),
-                border: match val.border {
-                    BorderType::Focused => Border {
-                        color: theme.accent,
-                        width: BORDER_WIDTH,
-                        radius: BORDER_RADIUS.into()
-                    },
-                    BorderType::Normal => Border {
-                        color: theme.overlay0,
-                        width: BORDER_WIDTH,
-                        radius: BORDER_RADIUS.into()
-                    },
-                    BorderType::Invisible => Border::default().rounded(BORDER_RADIUS),
-                    BorderType::None => Border::default(),
-                    BorderType::HoveredLinkTitle => {
-                        Border::default().rounded(Radius::default().bottom(BORDER_RADIUS))
-                    }
-                },
-                shadow: match val.border {
-                    BorderType::None | BorderType::HoveredLinkTitle => Shadow::default(),
-                    _ => shadow(*theme)
+                border: val.border,
+                shadow: if val.shadowed {
+                    shadow(*theme)
+                } else {
+                    Shadow::default()
                 },
                 snap: false
             })
@@ -231,9 +213,10 @@ pub fn container<'a>(content: impl Into<Element<'a>>) -> Container<'a> {
         align_y: Alignment::Start,
         height: Length::Shrink,
         width: Length::Shrink,
-        border: BorderType::None,
+        border: Border::default(),
         color: None,
-        padding: Padding::default()
+        padding: Padding::default(),
+        shadowed: false
     }
 }
 

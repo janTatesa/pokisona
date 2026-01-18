@@ -5,7 +5,7 @@ use std::{
 };
 
 use iced::{
-    Length::Fill,
+    Length,
     widget::{
         self, Column,
         scrollable::{Direction, Scrollbar},
@@ -15,13 +15,14 @@ use iced::{
 use itertools::{Either, chain};
 use url::Url;
 
-use super::iced_helpers::{
-    BORDER_WIDTH, SPACING_AND_PADDING, Span, not_yet_supported, rich_text, span
-};
+use super::iced_helpers::{BORDER_WIDTH, Span, not_yet_supported, rich_text, span};
 use crate::{
     Element, Link, PathBuf,
     markdown::{Block, BlockKind, ListItemType, Markdown, Modifiers, ParagraphItem},
-    view::{Theme, iced_helpers::text}
+    view::{
+        Theme,
+        iced_helpers::{SPACING, text}
+    }
 };
 
 impl<'a> Markdown<'a> {
@@ -36,15 +37,15 @@ impl<'a> Markdown<'a> {
         let scrollbar = Scrollbar::new()
             .width(SCROLLBAR_WIDTH)
             .scroller_width(SCROLLBAR_WIDTH);
-        let content = Column::from_iter(iter).spacing(SPACING_AND_PADDING);
+        let content = Column::from_iter(iter).spacing(SPACING);
         widget::scrollable(content)
             .direction(Direction::Both {
                 vertical: scrollbar,
                 horizontal: scrollbar
             })
             .auto_scroll(true)
-            .width(Fill)
-            .height(Fill)
+            .width(Length::Fill)
+            .height(Length::Fill)
             .into()
     }
 }
