@@ -11,7 +11,7 @@ use iced::{
 };
 use serde::{Deserialize, Deserializer, de};
 
-use crate::{Path, command::Command, theme::Theme};
+use crate::{Path, command::Command, view::Theme};
 
 #[derive(Deserialize, Clone)]
 pub struct Config {

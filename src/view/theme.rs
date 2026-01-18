@@ -1,24 +1,24 @@
 use catppuccin::{PALETTE, Rgb};
 use iced::{
-    Background, Border, Color,
+    Background, Border, Color, Shadow, border,
     theme::{Base, Mode, Palette, Style},
     widget::{
-        checkbox, container,
+        button, checkbox, container, pane_grid,
         rule::{self, FillMode},
+        scrollable::{self, AutoScroll, Rail},
         text, text_input
     }
 };
 use iced_selection::text as selection_text;
 use serde::Deserialize;
 
-use crate::iced_helpers::{ALPHA, BORDER_RADIUS, BORDER_WIDTH};
+use crate::view::iced_helpers::{self, ALPHA, BORDER_RADIUS, BORDER_WIDTH};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Theme {
     flavor: Flavor,
     pub accent: Color,
-    /// Colors things like headings
-    pub misc_colors: [Color; 6],
+    pub rainbow: [Color; 6],
     pub bold: Color,
     pub bold_italic: Color,
     pub italic: Color,
@@ -80,7 +80,7 @@ impl Base for Theme {
 
     fn base(&self) -> Style {
         Style {
-            background_color: self.mantle,
+            background_color: self.base,
             text_color: self.text
         }
     }
@@ -95,18 +95,25 @@ impl Base for Theme {
         .palette();
         Some(palette)
     }
+
+    fn name(&self) -> &str {
+        "catppuccin"
+    }
 }
 
 macro_rules! catalog {
+    ($widget:ident) => {
+        catalog!($widget, |_| $widget::Style::default());
+    };
     ($widget:ident, $style:expr) => {
         impl $widget::Catalog for Theme {
             type Class<'a> = $widget::StyleFn<'a, Self>;
 
-            fn default<'a>() -> Self::Class<'a> {
+            fn default<'a>() -> $widget::StyleFn<'a, Self> {
                 Box::new($style)
             }
 
-            fn style(&self, class: &Self::Class<'_>) -> $widget::Style {
+            fn style(&self, class: &$widget::StyleFn<'_, Self>) -> $widget::Style {
                 class(self)
             }
         }
@@ -126,8 +133,8 @@ macro_rules! catalog {
     };
 }
 
-catalog!(container, |_| container::Style::default());
-catalog!(text, |_| text::Style::default());
+catalog!(container);
+catalog!(text);
 catalog!(selection_text, |theme| selection_text::Style {
     color: None,
     selection: theme.accent.scale_alpha(ALPHA)
@@ -135,7 +142,7 @@ catalog!(selection_text, |theme| selection_text::Style {
 
 catalog!(text_input, text_input::Status, |theme, _| {
     text_input::Style {
-        background: Background::Color(theme.mantle),
+        background: Background::Color(theme.crust),
         border: Border::default(),
         placeholder: theme.subtext1,
         value: theme.text,
@@ -151,9 +158,7 @@ catalog!(rule, |theme| rule::Style {
     snap: false
 });
 
-catalog!(checkbox, checkbox::Status, default_checkbox_style);
-// TODO: maybe behave differently when it's disabled
-fn default_checkbox_style(theme: &Theme, status: checkbox::Status) -> checkbox::Style {
+catalog!(checkbox, checkbox::Status, |theme, status| {
     use checkbox::Status as S;
     let border = if matches!(status, S::Hovered { .. }) {
         Border::default()
@@ -179,8 +184,131 @@ fn default_checkbox_style(theme: &Theme, status: checkbox::Status) -> checkbox::
         border,
         text_color: None
     }
-}
+});
 
+catalog!(pane_grid, |theme| {
+    pane_grid::Style {
+        hovered_region: pane_grid::Highlight {
+            background: Background::Color(theme.accent.scale_alpha(ALPHA)),
+            border: Border::default().color(theme.accent).rounded(BORDER_RADIUS)
+        },
+        picked_split: pane_grid::Line {
+            color: theme.surface0,
+            width: BORDER_WIDTH
+        },
+        hovered_split: pane_grid::Line {
+            color: theme.accent,
+            width: BORDER_WIDTH
+        }
+    }
+});
+
+catalog!(button, button::Status, |theme, status| {
+    match status {
+        button::Status::Active => button::Style {
+            background: None,
+            text_color: theme.text,
+            border: Border::default(),
+            shadow: Shadow::default(),
+            snap: false
+        },
+        button::Status::Hovered => button::Style {
+            background: Some(theme.overlay0.into()),
+            text_color: theme.text,
+            border: Border::default().rounded(BORDER_RADIUS),
+            shadow: iced_helpers::shadow(*theme),
+            snap: false
+        },
+        button::Status::Pressed => button::Style {
+            background: Some(theme.accent.into()),
+            text_color: theme.crust,
+            border: Border::default().rounded(BORDER_RADIUS),
+            shadow: iced_helpers::shadow(*theme),
+            snap: false
+        },
+        button::Status::Disabled => button::Style {
+            background: None,
+            text_color: theme.overlay0,
+            border: Border::default(),
+            shadow: Shadow::default(),
+            snap: false
+        }
+    }
+});
+
+catalog!(scrollable, scrollable::Status, |theme, status| {
+    let rail_active = Rail {
+        background: Some(theme.crust.into()),
+        border: Border::default(),
+        scroller: scrollable::Scroller {
+            background: theme.overlay0.into(),
+            border: border::rounded(BORDER_RADIUS)
+        }
+    };
+
+    let mut rail_hovered = rail_active;
+    rail_hovered.scroller.background = theme.overlay1.into();
+
+    let mut rail_dragged = rail_active;
+    rail_dragged.scroller.background = theme.accent.into();
+
+    let auto_scroll = AutoScroll {
+        background: theme.base.scale_alpha(0.9).into(),
+        border: border::rounded(u32::MAX)
+            .width(1)
+            .color(theme.accent.scale_alpha(0.8)),
+        shadow: iced_helpers::shadow(*theme),
+        icon: theme.text.scale_alpha(0.8)
+    };
+
+    match status {
+        scrollable::Status::Active { .. } => scrollable::Style {
+            container: container::Style::default(),
+            vertical_rail: rail_active,
+            horizontal_rail: rail_active,
+            gap: None,
+            auto_scroll
+        },
+        scrollable::Status::Hovered {
+            is_horizontal_scrollbar_hovered,
+            is_vertical_scrollbar_hovered,
+            ..
+        } => scrollable::Style {
+            container: container::Style::default(),
+            vertical_rail: if is_vertical_scrollbar_hovered {
+                rail_hovered
+            } else {
+                rail_active
+            },
+            horizontal_rail: if is_horizontal_scrollbar_hovered {
+                rail_hovered
+            } else {
+                rail_active
+            },
+            gap: None,
+            auto_scroll
+        },
+        scrollable::Status::Dragged {
+            is_horizontal_scrollbar_dragged,
+            is_vertical_scrollbar_dragged,
+            ..
+        } => scrollable::Style {
+            container: container::Style::default(),
+            vertical_rail: if is_vertical_scrollbar_dragged {
+                rail_dragged
+            } else {
+                rail_active
+            },
+            horizontal_rail: if is_horizontal_scrollbar_dragged {
+                rail_dragged
+            } else {
+                rail_active
+            },
+            gap: None,
+            auto_scroll
+        }
+    }
+});
 impl ThemeConfig {
     pub fn theme(&self) -> Theme {
         let flavor_colors = match self.flavor {
@@ -208,7 +336,7 @@ impl ThemeConfig {
                 Accent::Blue => flavor_colors.blue.to_iced(),
                 Accent::Lavender => flavor_colors.lavender.to_iced()
             },
-            misc_colors: [
+            rainbow: [
                 flavor_colors.mauve.to_iced(),
                 flavor_colors.blue.to_iced(),
                 flavor_colors.green.to_iced(),

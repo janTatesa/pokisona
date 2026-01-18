@@ -3,11 +3,12 @@ use std::{
     str::FromStr
 };
 
+use iced::widget::pane_grid::{self, Direction, Pane, ResizeEvent, Target};
 use pest::Parser;
 use pest_derive::Parser;
 use serde::{Deserialize, Deserializer, de};
 
-use crate::PathBuf;
+use crate::{Link, Message, PathBuf};
 
 #[derive(Parser)]
 #[grammar = "./command.pest"]
@@ -16,6 +17,7 @@ struct CommandParser;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub enum CommandParseError {
+    InvalidArg(String),
     NotFound,
     NotEnoughArgs,
     TooManyArgs,
@@ -28,7 +30,8 @@ impl Display for CommandParseError {
             CommandParseError::NotFound => "Command not found",
             CommandParseError::NotEnoughArgs => "Not enough arguments",
             CommandParseError::InvalidSyntax(error) => &format!("Invalid syntax: {error}"),
-            CommandParseError::TooManyArgs => "Too many arguments"
+            CommandParseError::TooManyArgs => "Too many arguments",
+            CommandParseError::InvalidArg(arg) => &format!("Invalid argument: {arg}")
         };
 
         f.write_str(msg)
@@ -42,8 +45,9 @@ impl FromStr for Command {
         let mut pairs =
             CommandParser::parse(Rule::main, s).map_err(CommandParseError::InvalidSyntax)?;
 
-        let command = match dbg!(pairs.next().unwrap().as_str()) {
-            "quit" | "q" => Command::Quit,
+        // TODO: parse more variants (maybe make a derive macro)
+        let command = match pairs.next().unwrap().as_str() {
+            "quit" | "q" => Command::Quit(None),
             "quit-all" | "qa" => Command::QuitAll,
             "open" | "o" | "edit" | "e" => Command::Open {
                 path: pairs
@@ -52,22 +56,18 @@ impl FromStr for Command {
                     .as_str()
                     .into()
             },
-            "split" | "sp" => Command::Split {
-                path: pairs.next().map(|pair| pair.as_str().into())
-            },
             "vsplit" | "vs" => Command::VSplit {
-                path: pairs.next().map(|pair| pair.as_str().into())
+                path: pairs.next().map(|pair| pair.as_str().into()),
+                pane: None
             },
             "hsplit" | "hs" => Command::HSplit {
-                path: pairs.next().map(|pair| pair.as_str().into())
+                path: pairs.next().map(|pair| pair.as_str().into()),
+                pane: None
             },
             // "w" => Self::Write,
             // "wa" => Self::WriteAll,
             // "x" | "wq" => Self::WriteQuit,
             // "xa" | "wqa" => Self::WriteQuitAll,
-            "next-window" => Command::NextWindow,
-            "previous-window" => Command::PreviousWindow,
-            "transpose-windows" => Command::TransposeWindows,
             "scale-up" => Command::ScaleUp,
             "scale-down" => Command::ScaleDown,
             "scale-reset" => Command::ScaleReset,
@@ -76,6 +76,21 @@ impl FromStr for Command {
             "command-mode-open" => Command::CommandModeOpen,
             "noop" => Command::Noop,
             "command-mode-exit" => Command::CommandModeExit,
+            "file-history-forward" => Command::FileHistoryForward,
+            "file-history-backward" => Command::FileHistoryBackward,
+            "focus-adjacent" => Command::FocusAdjacent(
+                match pairs
+                    .next()
+                    .ok_or(CommandParseError::NotEnoughArgs)?
+                    .as_str()
+                {
+                    "up" => Direction::Up,
+                    "down" => Direction::Down,
+                    "left" => Direction::Left,
+                    "right" => Direction::Right,
+                    arg => return Err(CommandParseError::InvalidArg(arg.to_string()))
+                }
+            ),
             _ => return Err(CommandParseError::NotFound)
         };
 
@@ -97,32 +112,61 @@ impl<'a> Deserialize<'a> for Command {
     }
 }
 
+/// Unlike [`Message`](crate::app::Message) [`Command`] can be produced by the user (and in future plugins). Generally anything that's not the result of a [`Future`] or which only makes sense with a mouse interaction (such as [`Message::HoverEnd`](crate::app::Message::HoverEnd)) should be a [`Command`] to maximise keyboard centricism and plugin capabilities. However currently the usser cannot construct all possible instances of command due to [`Pane`] having a private field. This might be fixed by either implementing our own [`pane_grid`] (which we might eventually do anyways) or generating our own pane ids
+// TODO: have commands syntax in it's definition
 #[allow(clippy::enum_variant_names)]
-#[derive(Clone)]
-pub enum Command {
-    Quit,
+#[derive(Clone, Debug)]
+pub(crate) enum Command {
+    /// When [`None`] will quit the focused [`Pane`]
+    Quit(Option<Pane>),
     QuitAll,
     // Write,
     // WriteAll,
     // WriteQuit,
     // WriteQuitAll,
-    Open { path: PathBuf },
+    Open {
+        path: PathBuf
+    },
+    VSplit {
+        path: Option<PathBuf>,
+        pane: Option<Pane>
+    },
+    HSplit {
+        path: Option<PathBuf>,
+        pane: Option<Pane>
+    },
+    FocusPane(Pane),
+    DropPane {
+        pane: Pane,
+        target: Target
+    },
+    ResizePane(ResizeEvent),
 
-    Split { path: Option<PathBuf> },
-    VSplit { path: Option<PathBuf> },
-    HSplit { path: Option<PathBuf> },
-    NextWindow,
-    PreviousWindow,
-    TransposeWindows,
+    FocusAdjacent(pane_grid::Direction),
+
+    Error(String),
+
+    Follow(Link),
 
     ScaleUp,
     ScaleDown,
     ScaleReset,
 
+    CommandLineSet(String),
+    CommandLineSubmit,
     HistoryUp,
     HistoryDown,
     CommandModeOpen,
     CommandModeExit,
 
+    FileHistoryForward,
+    FileHistoryBackward,
+
     Noop
+}
+
+impl From<Command> for Message {
+    fn from(value: Command) -> Self {
+        Self::Command(value)
+    }
 }

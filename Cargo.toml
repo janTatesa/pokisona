@@ -4,17 +4,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-yoke = { version = "0.8.0", features = ["derive"] }
 # TODO: switch back to crates.io itertools when https://github.com/rust-itertools/itertools/pull/1071 is merged
-iced = { git = "https://github.com/iced-rs/iced", features = [
+iced = { version = "0.14", features = [
   "smol",
   "advanced",
   "wgpu",
   "crisp",
-  "thread-pool",
-], default-features = false, branch = "master" }
+  # I personally don't use x11, make an issue if you do
+  # "x11",
+  "wayland",
+], default-features = false }
 catppuccin = "2.6.0"
-iced_selection = { git = "https://git.sr.ht/~pml68/iced_selection", branch = "feat/on-link-hover" }
 serde = { version = "1.0.228", features = ["derive"] }
 clap = { version = "4.5.48", features = ["cargo", "derive"] }
 color-eyre = "0.6.5"
@@ -29,6 +29,5 @@ url = "2.5.7"
 open = "5.3.2"
 camino = "1.2.1"
 itertools = "0.14.0"
-
-[features]
-hot = ["iced/hot"]
+iced_selection = "0.4.0"
+lucide-icons = { version = "0.562.0" }

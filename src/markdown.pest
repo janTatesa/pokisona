@@ -1,3 +1,5 @@
+// Oh my fucking god I should have used chumsky
+
 word = _{ (!WHITE_SPACE ~ ANY)+ }
 
 modifier_inner = _{ (!PEEK ~ (paragraph_item | text_wrapped))+ }
@@ -25,11 +27,13 @@ quote         =  { (">" ~ " "? ~ line)+ }
 
 paragraph_item    = _{soft_break | escaped_char | comment | external_embed | external_link | embed | link | inline_code_block | inline_math_block | bold_italic | bold | italic | highlight | strikethrough | math_block | tag | reference }
 text_wrapped =  { (!(PEEK | paragraph_item | NEWLINE) ~ ANY)+ }
-text         =  { (!(paragraph_item | paragraph_break) ~ ANY)+ }
-paragraph = {(!(paragraph_break | body_item) ~ (text | paragraph_item))+ ~ (paragraph_break | body_item | &EOI) }
-line = {(!hard_break ~ (text | paragraph_item))* ~ hard_break}
+paragraph_text         =  { (!(paragraph_item | paragraph_break) ~ ANY)+ }
+paragraph = {(!(paragraph_break | body_item) ~ (paragraph_text | paragraph_item))+ ~ (paragraph_break | body_item | &EOI) }
 
-paragraph_break = _{"\n" ~ "\n"+}
+line_text = {(!(hard_break | paragraph_item) ~ ANY)+}
+line = {(line_text | paragraph_item)* ~ hard_break}
+
+paragraph_break = _{NEWLINE ~ NEWLINE+}
 
 tag       = { "#" ~ word }
 // TODO: references should be attached to a specific item
@@ -67,7 +71,7 @@ hard_break = _{NEWLINE | &EOI}
 heading_sharps = {"#"{1, 6} }
 heading        = { &(PEEK ~ "#"+) ~ heading_title_full ~ hard_break ~ body? ~ DROP }
 heading_title_full = { PUSH(heading_sharps) ~ " " ~ heading_title }
-heading_title  = { (text | paragraph_item)+ }
+heading_title  = { (paragraph_text | paragraph_item)+ }
 
 ruler = { "---" }
 

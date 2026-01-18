@@ -4,28 +4,48 @@ use std::{
     str::FromStr
 };
 
-use iced::widget::{self, Column, space};
+use iced::{
+    Length::Fill,
+    widget::{
+        self, Column,
+        scrollable::{Direction, Scrollbar},
+        space
+    }
+};
 use itertools::{Either, chain};
 use url::Url;
 
-use super::{Block, BlockKind, Markdown, ParagraphItem};
-use crate::{
-    PathBuf,
-    iced_helpers::{
-        BORDER_WIDTH, Element, Link, Modifiers, SPACING, Span, not_yet_supported, rich_text, span
-    },
-    markdown::ListItemType,
-    theme::Theme
+use super::iced_helpers::{
+    BORDER_WIDTH, SPACING_AND_PADDING, Span, not_yet_supported, rich_text, span
 };
+use crate::{
+    Element, Link, PathBuf,
+    markdown::{Block, BlockKind, ListItemType, Markdown, Modifiers, ParagraphItem},
+    view::{Theme, iced_helpers::text}
+};
+
 impl<'a> Markdown<'a> {
-    pub fn render(&'a self, theme: Theme) -> Element<'a> {
-        let iter = dbg!(self)
+    pub fn view(&'a self, theme: Theme) -> Element<'a> {
+        let iter = self
             .yaml
             .as_ref()
             .map(|_| not_yet_supported("yaml frontmatters").into_element(theme, None))
             .into_iter()
             .chain(self.content.iter().map(|block| block.render(theme)));
-        Column::from_iter(iter).spacing(SPACING).into()
+        const SCROLLBAR_WIDTH: f32 = BORDER_WIDTH * 2.;
+        let scrollbar = Scrollbar::new()
+            .width(SCROLLBAR_WIDTH)
+            .scroller_width(SCROLLBAR_WIDTH);
+        let content = Column::from_iter(iter).spacing(SPACING_AND_PADDING);
+        widget::scrollable(content)
+            .direction(Direction::Both {
+                vertical: scrollbar,
+                horizontal: scrollbar
+            })
+            .auto_scroll(true)
+            .width(Fill)
+            .height(Fill)
+            .into()
     }
 }
 
@@ -41,14 +61,14 @@ impl<'a> Block<'a> {
             BlockKind::ListItem(item) => {
                 let beginning = match item.kind {
                     ListItemType::Bullet => {
-                        Either::Left(iter::once(widget::text(BULLET).color(theme.accent).into()))
+                        Either::Left(iter::once(text(BULLET, theme.accent).into()))
                     }
                     ListItemType::Numbered(num) => {
-                        Either::Left(iter::once(widget::text(num).color(theme.accent).into()))
+                        Either::Left(iter::once(text(num, theme.accent).into()))
                     }
                     ListItemType::Task(checked) => Either::Right([
-                        widget::text(BULLET).color(theme.accent).into(),
-                        widget::checkbox("", checked).into()
+                        text(BULLET, theme.accent).into(),
+                        widget::checkbox(checked).into()
                     ])
                 }
                 .into_iter();
@@ -104,7 +124,7 @@ impl<'a> Iterator for ParagraphItemIter<'a> {
     type Item = Span<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        use super::ParagraphItemKind as I;
+        use crate::markdown::ParagraphItemKind as I;
         if let Some(iter) = self.nested.as_mut()
             && let Some(widget) = iter.next()
         {

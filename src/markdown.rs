@@ -1,32 +1,23 @@
 #![allow(dead_code)]
-mod store;
-mod view;
+pub mod store;
 
+use bitflags::bitflags;
 use itertools::{Itertools, PeekingNext};
 use pest::{Parser, Span, iterators::Pair};
 use pest_derive::Parser;
-use yoke::Yokeable;
 
-use crate::iced_helpers::Modifiers;
-pub use crate::markdown::store::MarkdownStore;
-
-// TODO: it would be better to use chumsky as this parser is pretty slow
+// TODO: it would be better to use chumsky because this is boilerplateous
 #[derive(Parser)]
-#[grammar = "./markdown/markdown.pest"]
+#[grammar = "./markdown.pest"]
 struct MarkdownParser;
 
-#[derive(Debug, Default, Yokeable)]
+#[derive(Debug, Default)]
 pub struct Markdown<'a> {
     pub yaml: Option<Yaml<'a>>,
     pub content: Vec<Block<'a>>
 }
 
 impl<'a> Markdown<'a> {
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(input: String) -> MarkdownStore {
-        MarkdownStore::new(input)
-    }
-
     fn parse(input: &'a str) -> Self {
         let mut pairs = MarkdownParser::parse(Rule::main, input)
             .expect("Parsing markdown should be infallible")
@@ -217,7 +208,7 @@ impl<'a> ParagraphItem<'a> {
             Rule::bold_italic => modifier_span(Modifiers::ITALIC | Modifiers::BOLD, inner),
             Rule::highlight => modifier_span(Modifiers::HIGHLIGHT, inner),
             Rule::strikethrough => modifier_span(Modifiers::STRIKETHROUGH, inner),
-            Rule::text | Rule::text_wrapped => I::Text,
+            Rule::paragraph_text | Rule::line_text | Rule::text_wrapped => I::Text,
             Rule::escaped_char => I::EscapedChar,
             Rule::inline_code_block => I::InlineCodeBlock {
                 inner: inner.next().unwrap().as_span()
@@ -306,6 +297,21 @@ pub enum ParagraphItemKind<'a> {
     Tag,
     Reference,
     Comment
+}
+
+// TODO: Bitflags make me do long if else chains instead of match arms, maybe a struct of bools would be better
+bitflags! {
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    pub struct Modifiers: u16 {
+        const BOLD = 1 << 0;
+        const ITALIC = 1 << 1;
+        const HIGHLIGHT = 1 << 2;
+        const STRIKETHROUGH = 1 << 3;
+        const CODE = 1 << 4;
+        const TAG = 1 << 5;
+        const REFERENCE = 1 << 7;
+        const UNSUPPORTED = 1 << 8;
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

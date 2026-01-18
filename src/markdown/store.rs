@@ -14,7 +14,7 @@ pub struct MarkdownStore {
 }
 
 impl MarkdownStore {
-    pub(super) fn new(input: String) -> Self {
+    pub fn new(input: String) -> Self {
         let source = input.leak();
         let source_ptr = NonNull::from_mut(source);
         let markdown = ManuallyDrop::new(Markdown::parse(source));

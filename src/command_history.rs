@@ -32,7 +32,7 @@ impl CommandHistory {
     pub fn select_down(&mut self) {
         self.selected = match (self.selected, self.content.len()) {
             (None, _) | (_, 0) => None,
-            (Some(selected), len) if selected == (len - 1) => None,
+            (Some(selected), len) if selected == len - 1 => None,
             (Some(selected), len) => Some(min(selected + 1, len - 1))
         }
     }

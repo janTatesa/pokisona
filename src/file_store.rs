@@ -5,8 +5,14 @@ use std::{
 };
 
 use dashmap::DashMap;
+use iced::Task;
+use smol::fs;
 
-use crate::{Path, PathBuf, markdown::MarkdownStore};
+use crate::{
+    Message, Path, PathBuf,
+    command::Command,
+    markdown::{Markdown, store::MarkdownStore}
+};
 
 // TODO: maybe use RefCell hashmap
 #[derive(Default, Debug)]
@@ -24,8 +30,8 @@ impl FileData {
         &self.path
     }
 
-    pub fn content(&self) -> Option<&MarkdownStore> {
-        self.content.get()
+    pub fn content(&self) -> Option<&Markdown<'_>> {
+        self.content.get().map(MarkdownStore::inner)
     }
 }
 
@@ -36,12 +42,12 @@ impl Drop for FileData {
 }
 
 impl FileStore {
-    // Returns the reference to file data and also if the reference was newly created
-    pub fn get_ref(&'static self, path: PathBuf) -> (Rc<FileData>, bool) {
+    /// Creates a reference to a file and a task which produces [`Message::FileOpened`]
+    pub fn open_file(&'static self, path: PathBuf) -> (Rc<FileData>, Task<Message>) {
         if let Some(weak) = self.0.get(&path)
             && let Some(data) = weak.upgrade()
         {
-            return (data, false);
+            return (data, Task::none());
         }
 
         let data = Rc::new(FileData {
@@ -50,8 +56,16 @@ impl FileStore {
             file_store: self
         });
 
-        self.0.insert(path, Rc::downgrade(&data));
-        (data, true)
+        self.0.insert(path.clone(), Rc::downgrade(&data));
+        let future = Task::future(async {
+            let content = fs::read_to_string(&path)
+                .await
+                .map_err(|error| error.to_string());
+            content
+                .map(|content| Message::FileOpened { path, content })
+                .unwrap_or_else(|err| Command::Error(err).into())
+        });
+        (data, future)
     }
 
     pub fn insert(&self, path: &Path, content: MarkdownStore) {

@@ -1,6 +1,5 @@
 use std::iter::{self, Peekable};
 
-use bitflags::bitflags;
 use iced::{
     Alignment, Background, Border, Color, Font, Length, Padding, Renderer, Shadow,
     advanced::widget::Text,
@@ -9,12 +8,11 @@ use iced::{
     widget
 };
 use iced_selection::text::{Fragment, IntoFragment, Rich};
-use url::Url;
+use lucide_icons::Icon;
 
-use crate::{PathBuf, app::Message, theme::Theme};
+use crate::{Element, Link, Message, command::Command, markdown::Modifiers, view::Theme};
 
-pub type Element<'a> = iced::Element<'a, Message, Theme>;
-pub const SPACING: f32 = 5.0;
+pub const SPACING_AND_PADDING: f32 = 5.0;
 pub const ALPHA: f32 = 0.2;
 pub const DEFAULT_FONT_SIZE: f32 = 16.;
 
@@ -60,7 +58,7 @@ impl<'a, I: Iterator<Item = Span<'a>>> Iterator for SpanIter<I> {
             _ if modifiers.contains(Modifiers::BOLD | Modifiers::ITALIC) => theme.bold_italic,
             _ if modifiers.contains(Modifiers::BOLD) => theme.bold,
             _ if modifiers.contains(Modifiers::ITALIC) => theme.italic,
-            (_, Some(heading)) => theme.misc_colors[(heading - 1) as usize],
+            (_, Some(heading)) => theme.rainbow[(heading - 1) as usize],
             _ => theme.text
         };
 
@@ -80,7 +78,6 @@ impl<'a, I: Iterator<Item = Span<'a>>> Iterator for SpanIter<I> {
 
         self.previous_with_bg = bg.is_some();
 
-        // TODO: Ideally there should be a padding for bordered elements but it's quite quirky
         let border = iced_selection::span(span.text)
             .strikethrough(modifiers.contains(Modifiers::STRIKETHROUGH))
             .background_maybe(bg)
@@ -104,17 +101,17 @@ pub fn rich_text<'a>(
         spans: spans.into_iter().peekable()
     })
     .size(DEFAULT_FONT_SIZE + (6 - heading.unwrap_or(6)) as f32 * 2.)
-    .on_link_click(Message::LinkClick)
+    .on_link_click(|link| Command::Follow(link).into())
     .on_link_hover(Message::Hover)
     .on_hover_lost(Message::HoverEnd)
     .into()
 }
 
 pub fn text<'a>(str: impl IntoFragment<'a>, color: Color) -> Text<'a, Theme, Renderer> {
-    widget::text(str).style(move |_| widget::text::Style { color: Some(color) })
+    widget::text(str).color(color)
 }
 
-const SHADOW_BLUR: f32 = 2.;
+const SHADOW_BLUR: f32 = 4.;
 pub fn shadow(theme: Theme) -> Shadow {
     Shadow {
         color: theme.crust,
@@ -124,13 +121,13 @@ pub fn shadow(theme: Theme) -> Shadow {
 }
 
 pub const BORDER_WIDTH: f32 = 2.;
-pub const BORDER_RADIUS: f32 = 6.;
+pub const BORDER_RADIUS: f32 = 3.;
 #[derive(Clone, Copy)]
 pub enum BorderType {
     Focused,
     Normal,
     Invisible,
-    TitleBarBottom,
+    HoveredLinkTitle,
     None
 }
 
@@ -166,7 +163,7 @@ impl Container<'_> {
         Self { border, ..self }
     }
 
-    pub fn color(self, color: Color) -> Self {
+    pub fn background(self, color: Color) -> Self {
         let color = Some(color);
         Self { color, ..self }
     }
@@ -176,7 +173,7 @@ impl Container<'_> {
     }
 
     pub fn padded(self) -> Self {
-        let padding = SPACING.into();
+        let padding = SPACING_AND_PADDING.into();
         Self { padding, ..self }
     }
 
@@ -207,12 +204,12 @@ impl<'a> From<Container<'a>> for Element<'a> {
                     },
                     BorderType::Invisible => Border::default().rounded(BORDER_RADIUS),
                     BorderType::None => Border::default(),
-                    BorderType::TitleBarBottom => {
+                    BorderType::HoveredLinkTitle => {
                         Border::default().rounded(Radius::default().bottom(BORDER_RADIUS))
                     }
                 },
                 shadow: match val.border {
-                    BorderType::None | BorderType::TitleBarBottom => Shadow::default(),
+                    BorderType::None | BorderType::HoveredLinkTitle => Shadow::default(),
                     _ => shadow(*theme)
                 },
                 snap: false
@@ -282,27 +279,37 @@ pub fn span<'a>(content: impl IntoFragment<'a>) -> Span<'a> {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum Link {
-    InvalidUrlExternal(String),
-    External(Url),
-
-    Internal(PathBuf),
-    /// Currently handled the same as [`Link::InvalidUrlExternal`], in future will create a new file on click
-    NonExistentInternal(PathBuf)
+impl Command {
+    fn icon(&self) -> Icon {
+        match self {
+            Command::Quit(_) => Icon::CircleX,
+            Command::VSplit { .. } => Icon::SquareSplitHorizontal,
+            Command::HSplit { .. } => Icon::SquareSplitVertical,
+            Command::FileHistoryForward => Icon::ArrowRight,
+            Command::FileHistoryBackward => Icon::ArrowLeft,
+            _ => todo!()
+        }
+    }
 }
 
-// TODO: Bitflags make me do long if else chains instead of match arms, maybe a struct of bools would be better
-bitflags! {
-    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-    pub struct Modifiers: u16 {
-        const BOLD = 1 << 0;
-        const ITALIC = 1 << 1;
-        const HIGHLIGHT = 1 << 2;
-        const STRIKETHROUGH = 1 << 3;
-        const CODE = 1 << 4;
-        const TAG = 1 << 5;
-        const REFERENCE = 1 << 7;
-        const UNSUPPORTED = 1 << 8;
-    }
+pub fn button<'a>(command: Command, color: Color) -> Element<'a> {
+    let content = text(command.icon().unicode(), color).font(Font::with_name("lucide"));
+    widget::button(content)
+        .padding(0)
+        .on_press(command.into())
+        .into()
+}
+
+pub fn button_enabled_if<'a>(
+    command: Command,
+    color: Color,
+    disabled_color: Color,
+    condition: bool
+) -> Element<'a> {
+    let color = if condition { color } else { disabled_color };
+    let content = text(command.icon().unicode(), color).font(Font::with_name("lucide"));
+    widget::button(content)
+        .on_press_maybe(condition.then_some(command.into()))
+        .padding(0)
+        .into()
 }
