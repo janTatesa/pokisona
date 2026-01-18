@@ -239,7 +239,7 @@ catalog!(button, button::Status, |theme, status| {
 catalog!(scrollable, scrollable::Status, |theme, status| {
     let rail_active = Rail {
         background: Some(theme.crust.into()),
-        border: Border::default(),
+        border: border::rounded(BORDER_RADIUS),
         scroller: scrollable::Scroller {
             background: theme.overlay0.into(),
             border: border::rounded(BORDER_RADIUS)

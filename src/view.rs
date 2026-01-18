@@ -153,9 +153,12 @@ impl Pokisona {
                     shadow: Shadow::default(),
                     snap: false
                 });
-            let body = state
-                .current_file()
-                .and_then(|file| Some(file.content()?.view(self.theme())));
+            let body = state.current_file().map(|file| {
+                let body = container(file.content()?.view(self.theme()))
+                    .padded()
+                    .stretched();
+                Some(body)
+            });
             /// Since the border is displayed on two panes next to each other, the border width has to be halved
             const CONTENT_BORDER_WIDTH: f32 = BORDER_WIDTH / 2.;
             Content::new(body)
