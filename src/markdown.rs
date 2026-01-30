@@ -1,10 +1,19 @@
+// I hate myself for this mess I've created
 #![allow(dead_code)]
 pub mod store;
 
+use std::rc::Rc;
+
 use bitflags::bitflags;
+use iced::Task;
 use itertools::{Itertools, PeekingNext};
 use pest::{Parser, Span, iterators::Pair};
 use pest_derive::Parser;
+
+use crate::{
+    Message, PathBuf,
+    file_store::{FileData, FileLocator, FileStore}
+};
 
 // TODO: it would be better to use chumsky because this is boilerplateous
 #[derive(Parser)]
@@ -18,7 +27,7 @@ pub struct Markdown<'a> {
 }
 
 impl<'a> Markdown<'a> {
-    fn parse(input: &'a str) -> Self {
+    fn parse(input: &'a str, file_store: &'static FileStore) -> (Self, Task<Message>) {
         let mut pairs = MarkdownParser::parse(Rule::main, input)
             .expect("Parsing markdown should be infallible")
             .peekable();
@@ -29,9 +38,12 @@ impl<'a> Markdown<'a> {
                 inner_span: pair.into_inner().next().unwrap().as_span()
             });
 
-        let content = pairs.map(Block::parse).collect();
+        let mut tasks = Vec::new();
+        let content = pairs
+            .map(|pair| Block::parse(pair, file_store, &mut tasks))
+            .collect();
 
-        Self { yaml, content }
+        (Self { yaml, content }, Task::batch(tasks))
     }
 }
 
@@ -93,7 +105,11 @@ pub struct ListItem<'a> {
 }
 
 impl<'a> ListItem<'a> {
-    fn parse(mut pairs: impl PeekingNext<Item = Pair<'a, Rule>>) -> Self {
+    fn parse(
+        mut pairs: impl PeekingNext<Item = Pair<'a, Rule>>,
+        file_store: &'static FileStore,
+        tasks: &mut Vec<Task<Message>>
+    ) -> Self {
         let indentation = pairs
             .peeking_take_while(|pair| pair.as_rule() == Rule::indentation)
             .count() as u16;
@@ -110,10 +126,18 @@ impl<'a> ListItem<'a> {
         };
 
         let content = pairs.next().unwrap();
-        let content = content.into_inner().map(ParagraphItem::parse).collect();
+        let content = content
+            .into_inner()
+            .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
+            .collect();
 
         let subitems = pairs
-            .map(|pair| (pair.as_span(), Self::parse(pair.into_inner().peekable())))
+            .map(|pair| {
+                (
+                    pair.as_span(),
+                    Self::parse(pair.into_inner().peekable(), file_store, tasks)
+                )
+            })
             .collect();
 
         Self {
@@ -126,7 +150,11 @@ impl<'a> ListItem<'a> {
 }
 
 impl<'a> Block<'a> {
-    fn parse(pair: Pair<'a, Rule>) -> Self {
+    fn parse(
+        pair: Pair<'a, Rule>,
+        file_store: &'static FileStore,
+        tasks: &mut Vec<Task<Message>>
+    ) -> Self {
         use BlockKind as B;
         let span = pair.as_span();
         let rule = pair.as_rule();
@@ -155,12 +183,16 @@ impl<'a> Block<'a> {
                 title: inner
                     .next_if(|pair| pair.as_rule() == Rule::callout_title)
                     .map(|pair| pair.as_span()),
-                content: inner.map(ParagraphItem::parse).collect()
+                content: inner
+                    .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
+                    .collect()
             },
             Rule::quote => B::Quote {
-                content: inner.map(ParagraphItem::parse).collect()
+                content: inner
+                    .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
+                    .collect()
             },
-            Rule::list_item => B::ListItem(ListItem::parse(inner)),
+            Rule::list_item => B::ListItem(ListItem::parse(inner, file_store, tasks)),
             Rule::heading => {
                 let title = inner.next().unwrap();
                 let title_full = title.as_span();
@@ -172,12 +204,18 @@ impl<'a> Block<'a> {
                         .next()
                         .unwrap()
                         .into_inner()
-                        .map(ParagraphItem::parse)
+                        .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
                         .collect(),
-                    content: inner.map(Block::parse).collect()
+                    content: inner
+                        .map(|pair| Block::parse(pair, file_store, tasks))
+                        .collect()
                 }
             }
-            Rule::paragraph => B::Paragraph(inner.map(ParagraphItem::parse).collect()),
+            Rule::paragraph => B::Paragraph(
+                inner
+                    .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
+                    .collect()
+            ),
             Rule::comment => B::Comment {
                 inner: inner.next().unwrap().as_span()
             },
@@ -189,68 +227,128 @@ impl<'a> Block<'a> {
     }
 }
 impl<'a> ParagraphItem<'a> {
-    fn parse(pair: Pair<'a, Rule>) -> Self {
+    fn parse(
+        pair: Pair<'a, Rule>,
+        file_store: &'static FileStore,
+        tasks: &mut Vec<Task<Message>>
+    ) -> Self {
         use ParagraphItemKind as I;
-
-        fn modifier_span<'a>(
-            modifier: Modifiers,
-            pairs: impl Iterator<Item = Pair<'a, Rule>>
-        ) -> ParagraphItemKind<'a> {
-            I::ModifierSpan(modifier, pairs.map(ParagraphItem::parse).collect())
-        }
 
         let span = pair.as_span();
         let rule = pair.as_rule();
         let mut inner = pair.into_inner().peekable();
         let kind = match rule {
-            Rule::bold => modifier_span(Modifiers::BOLD, inner),
-            Rule::italic => modifier_span(Modifiers::ITALIC, inner),
-            Rule::bold_italic => modifier_span(Modifiers::ITALIC | Modifiers::BOLD, inner),
-            Rule::highlight => modifier_span(Modifiers::HIGHLIGHT, inner),
-            Rule::strikethrough => modifier_span(Modifiers::STRIKETHROUGH, inner),
+            Rule::bold => {
+                let modifier = Modifiers::BOLD;
+                I::ModifierSpan(
+                    modifier,
+                    inner
+                        .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
+                        .collect()
+                )
+            }
+            Rule::italic => {
+                let modifier = Modifiers::ITALIC;
+                I::ModifierSpan(
+                    modifier,
+                    inner
+                        .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
+                        .collect()
+                )
+            }
+            Rule::bold_italic => {
+                let modifier = Modifiers::ITALIC | Modifiers::BOLD;
+                I::ModifierSpan(
+                    modifier,
+                    inner
+                        .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
+                        .collect()
+                )
+            }
+            Rule::highlight => {
+                let modifier = Modifiers::HIGHLIGHT;
+                I::ModifierSpan(
+                    modifier,
+                    inner
+                        .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
+                        .collect()
+                )
+            }
+            Rule::strikethrough => {
+                let modifier = Modifiers::STRIKETHROUGH;
+                I::ModifierSpan(
+                    modifier,
+                    inner
+                        .map(|pair| ParagraphItem::parse(pair, file_store, tasks))
+                        .collect()
+                )
+            }
             Rule::paragraph_text | Rule::line_text | Rule::text_wrapped => I::Text,
             Rule::escaped_char => I::EscapedChar,
             Rule::inline_code_block => I::InlineCodeBlock {
-                inner: inner.next().unwrap().as_span()
+                inner: inner.next().unwrap().as_str()
             },
             Rule::inline_math_block => I::InlineMathBlock {
-                inner: inner.next().unwrap().as_span()
+                inner: inner.next().unwrap().as_str()
             },
             Rule::link => {
-                let mut target = inner.next().unwrap().into_inner();
-                let file_target = target.next().unwrap().as_span();
-                let subtarget = match target.next() {
-                    Some(subtarget) if subtarget.as_rule() == Rule::heading_link => {
-                        Subtarget::Heading(subtarget.as_span())
-                    }
-                    Some(subtarget) if subtarget.as_rule() == Rule::reference_link => {
-                        Subtarget::Reference(subtarget.as_span())
-                    }
-                    Some(rule) => panic!("Invalid rule inside link: {rule}"),
-                    _ => Subtarget::None
-                };
-                let display = inner.next().map(|pair| pair.as_span());
+                let target = inner.next().unwrap();
+                let target_str = target.as_str();
+                let mut target = target.into_inner();
                 I::Link {
-                    file_target,
-                    subtarget,
-                    display
+                    target: target.next().unwrap().as_str().into(),
+                    subtarget: match target.next() {
+                        Some(subtarget) if subtarget.as_rule() == Rule::heading_link => {
+                            Subtarget::Heading(subtarget.as_str())
+                        }
+                        Some(subtarget) if subtarget.as_rule() == Rule::reference_link => {
+                            Subtarget::Reference(subtarget.as_str())
+                        }
+                        Some(rule) => panic!("Invalid rule inside link: {rule}"),
+                        _ => Subtarget::None
+                    },
+                    display: inner.next().map(|pair| pair.as_str()),
+                    target_str
                 }
             }
-            Rule::embed => I::Embed {
-                inner: inner.next().unwrap().as_span()
-            },
+            Rule::embed => {
+                let target = inner.next().unwrap();
+                let target_str = target.as_str();
+                let mut target = target.into_inner();
+                I::Link {
+                    target: target.next().unwrap().as_str().into(),
+                    subtarget: match target.next() {
+                        Some(subtarget) if subtarget.as_rule() == Rule::heading_link => {
+                            Subtarget::Heading(subtarget.as_str())
+                        }
+                        Some(subtarget) if subtarget.as_rule() == Rule::reference_link => {
+                            Subtarget::Reference(subtarget.as_str())
+                        }
+                        Some(rule) => panic!("Invalid rule inside link: {rule}"),
+                        _ => Subtarget::None
+                    },
+                    display: inner.next().map(|pair| pair.as_str()),
+                    target_str
+                }
+            }
             Rule::tag => I::Tag,
             Rule::reference => I::Reference,
             Rule::comment => I::Comment,
             Rule::external_link => I::ExternalLink {
                 display: inner
                     .next_if(|pair| pair.as_rule() == Rule::external_link_display)
-                    .map(|pair| pair.as_span()),
-                target: inner.next().unwrap().as_span()
+                    .map(|pair| pair.as_str()),
+                target: inner.next().unwrap().as_str().parse().unwrap()
             },
-            Rule::external_embed => I::ExternalEmbed {
-                target: inner.next().unwrap().as_span()
-            },
+            Rule::external_embed => {
+                let display = inner
+                    .next_if(|pair| pair.as_rule() == Rule::external_link_display)
+                    .map(|pair| pair.as_str());
+                let (target, task) =
+                    file_store.open(inner.next().unwrap().as_str().parse().unwrap());
+                tasks.push(task);
+                I::ExternalEmbed { target, display }
+            }
             Rule::soft_break => I::SoftBreak,
             rule => panic!("Invalid rule inside line: {rule:?}")
         };
@@ -258,39 +356,44 @@ impl<'a> ParagraphItem<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub struct ParagraphItem<'a> {
     pub span: Span<'a>,
     pub kind: ParagraphItemKind<'a>
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 pub enum ParagraphItemKind<'a> {
     ModifierSpan(Modifiers, Vec<ParagraphItem<'a>>),
     Text,
     InlineCodeBlock {
-        inner: Span<'a>
+        inner: &'a str
     },
     InlineMathBlock {
-        inner: Span<'a>
+        inner: &'a str
     },
     SoftBreak,
     Link {
-        file_target: Span<'a>,
+        target_str: &'a str,
+        target: PathBuf,
         subtarget: Subtarget<'a>,
-        display: Option<Span<'a>>
+        display: Option<&'a str>
     },
     ExternalLink {
-        target: Span<'a>,
-        display: Option<Span<'a>>
+        target: FileLocator,
+        display: Option<&'a str>
     },
 
     ExternalEmbed {
-        target: Span<'a>
+        display: Option<&'a str>,
+        target: Rc<FileData>
     },
 
     Embed {
-        inner: Span<'a>
+        target_str: &'a str,
+        target: Rc<FileData>,
+        subtarget: Subtarget<'a>,
+        display: Option<&'a str>
     },
 
     EscapedChar,
@@ -317,8 +420,8 @@ bitflags! {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Subtarget<'a> {
     None,
-    Heading(Span<'a>),
-    Reference(Span<'a>)
+    Heading(&'a str),
+    Reference(&'a str)
 }
 
 #[derive(Debug)]

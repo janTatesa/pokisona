@@ -3,7 +3,7 @@ use std::{env, fs};
 use clap::{ArgAction, Parser, Subcommand};
 use color_eyre::{Result, eyre::OptionExt};
 
-use crate::{PathBuf, config::Config};
+use crate::{PathBuf, config::Config, file_store::FileLocator};
 
 #[derive(Parser)]
 struct Cli {
@@ -12,7 +12,7 @@ struct Cli {
     #[arg(long, action = ArgAction::SetTrue)]
     use_default_config: bool,
     #[arg(long)]
-    file: Option<PathBuf>
+    file: Option<FileLocator>
 }
 
 #[derive(Subcommand)]
@@ -28,7 +28,7 @@ enum VaultCommand {
 }
 
 pub struct VaultName(pub String);
-pub struct InitialFile(pub Option<PathBuf>);
+pub struct InitialFile(pub Option<FileLocator>);
 pub fn handle_args() -> Result<(VaultName, InitialFile, Config)> {
     let mut path = dirs::data_dir().ok_or_eyre("Cannot determine data dir")?;
     path.push("pokisona");

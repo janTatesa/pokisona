@@ -1,7 +1,8 @@
+// Wtf is this shit. Fuck you Tatesa
 use std::{
-    iter::{self, Peekable},
-    slice,
-    str::FromStr
+    iter::{self, Enumerate, Peekable},
+    rc::Rc,
+    slice
 };
 
 use iced::{
@@ -13,11 +14,11 @@ use iced::{
     }
 };
 use itertools::{Either, chain};
-use url::Url;
 
 use super::iced_helpers::{BORDER_WIDTH, Span, not_yet_supported, rich_text, span};
 use crate::{
-    Element, Link, PathBuf,
+    Element, Link,
+    file_store::FileData,
     markdown::{Block, BlockKind, ListItemType, Markdown, Modifiers, ParagraphItem},
     view::{
         Theme,
@@ -56,7 +57,7 @@ impl<'a> Block<'a> {
         match &self.kind {
             BlockKind::Paragraph(line) => rich_text(
                 theme,
-                ParagraphItemIter::new(line, Modifiers::empty()),
+                ParagraphItemIter::new(theme, line, Modifiers::empty()),
                 None
             ),
             BlockKind::ListItem(item) => {
@@ -73,7 +74,7 @@ impl<'a> Block<'a> {
                     ])
                 }
                 .into_iter();
-                let content = ParagraphItemIter::new(&item.content, Modifiers::empty());
+                let content = ParagraphItemIter::new(theme, &item.content, Modifiers::empty());
                 let content = rich_text(theme, content, None);
                 widget::row(chain![beginning, iter::once(content)]).into()
             }
@@ -93,7 +94,7 @@ impl<'a> Block<'a> {
             } => widget::column(
                 iter::once(rich_text(
                     theme,
-                    ParagraphItemIter::new(title, Modifiers::empty()),
+                    ParagraphItemIter::new(theme, title, Modifiers::empty()),
                     Some(*nesting)
                 ))
                 .chain(content.iter().map(|block| block.render(theme)))
@@ -106,17 +107,22 @@ impl<'a> Block<'a> {
 }
 
 struct ParagraphItemIter<'a> {
+    theme: Theme,
     modifiers: Modifiers,
-    inner: Peekable<slice::Iter<'a, ParagraphItem<'a>>>,
+    // TODO: actually display those embeds
+    embeds: Vec<Rc<FileData>>,
+    inner: Peekable<Enumerate<slice::Iter<'a, ParagraphItem<'a>>>>,
     nested: Option<Box<ParagraphItemIter<'a>>>
 }
 
 impl<'a> ParagraphItemIter<'a> {
-    fn new(inner: &'a [ParagraphItem<'a>], modifiers: Modifiers) -> Self {
+    fn new(theme: Theme, inner: &'a [ParagraphItem<'a>], modifiers: Modifiers) -> Self {
         Self {
-            inner: inner.iter().peekable(),
+            inner: inner.iter().enumerate().peekable(),
             nested: None,
-            modifiers
+            modifiers,
+            theme,
+            embeds: vec![]
         }
     }
 }
@@ -132,30 +138,54 @@ impl<'a> Iterator for ParagraphItemIter<'a> {
             return Some(widget);
         }
 
-        let line_item = self.inner.next()?;
+        let (count, line_item) = self.inner.next()?;
         let content = line_item.span.as_str();
         let modifiers = match &line_item.kind {
             I::ModifierSpan(modifiers, line) => {
-                self.nested = Some(Box::new(Self::new(line, self.modifiers | *modifiers)));
+                self.nested = Some(Box::new(Self::new(
+                    self.theme,
+                    line,
+                    self.modifiers | *modifiers
+                )));
                 return self.next();
             }
             I::Text => span(content),
             I::SoftBreak => span("\\\n"),
             I::EscapedChar => span(&line_item.span.as_str()[1..]),
-            I::InlineCodeBlock { inner } => span(inner.as_str()).modifiers(Modifiers::CODE),
-            I::InlineMathBlock { .. } | I::ExternalEmbed { .. } | I::Embed { .. } => {
-                not_yet_supported("math blocks, embeds")
+            I::InlineCodeBlock { inner } => span(*inner).modifiers(Modifiers::CODE),
+            I::InlineMathBlock { .. } => not_yet_supported("math blocks, embeds"),
+            I::ExternalEmbed { target, display } => {
+                self.embeds.push(target.clone());
+                span(match (display, count == 0 && self.inner.peek().is_none()) {
+                    (Some(display), _) => display,
+                    (None, false) => target.locator().as_str(),
+                    _ => return None
+                })
+                .link(Link::External(target.locator().clone()))
+            }
+            I::Embed {
+                target,
+                display,
+                target_str,
+                ..
+            } => {
+                self.embeds.push(target.clone());
+                span(match (display, count == 0 && self.inner.peek().is_none()) {
+                    (Some(display), _) => display,
+                    (None, false) => *target_str,
+                    _ => return None
+                })
+                .link(Link::External(target.locator().clone()))
             }
             I::Tag => span(content).modifiers(Modifiers::TAG),
             I::Reference => span(content).modifiers(Modifiers::REFERENCE),
             I::Link {
-                file_target,
+                target,
                 display,
+                target_str,
                 ..
             } => {
-                let mut path = PathBuf::from(file_target.as_str());
-                // TODO: Not robust enough
-                // IO should be async for example
+                let mut path = target.clone();
                 if path.extension().is_none() {
                     path.set_extension("md");
                 }
@@ -166,15 +196,13 @@ impl<'a> Iterator for ParagraphItemIter<'a> {
                     Link::NonExistentInternal(path)
                 };
 
-                span(display.unwrap_or(*file_target).as_str()).link(link)
+                span(display.unwrap_or(target_str)).link(link)
             }
             I::ExternalLink {
                 target, display, ..
             } => {
-                let link = Url::from_str(target.as_str())
-                    .map(Link::External)
-                    .unwrap_or(Link::InvalidUrlExternal(target.as_str().to_string()));
-                span(display.unwrap_or(*target).as_str()).link(link)
+                let link = Link::External(target.as_str().parse().unwrap());
+                span(display.unwrap_or(target.as_str())).link(link)
             }
             I::Comment => span("")
         }

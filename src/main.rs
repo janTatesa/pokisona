@@ -10,6 +10,7 @@ mod view;
 
 use std::rc::Rc;
 
+use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
 use color_eyre::Result;
 use iced::{
@@ -29,8 +30,7 @@ use crate::{
     command::Command,
     command_history::CommandHistory,
     config::{Config, Keybinding},
-    file_store::{FileData, FileStore},
-    markdown::store::MarkdownStore,
+    file_store::{FileData, FileLocator, FileStore},
     pane_state::PaneState,
     view::Theme
 };
@@ -60,7 +60,7 @@ struct Pokisona {
 enum HoveredLink {
     Internal(Rc<FileData>),
     Error(String),
-    External(String)
+    External(FileLocator)
 }
 
 /// Most [`Message`]s should be put in [`Command`], see it's documentation
@@ -73,18 +73,19 @@ enum Message {
     MouseMoved(Point),
 
     KeyEvent(Keybinding),
-    FileOpened { path: PathBuf, content: String },
+    FileOpened {
+        locator: FileLocator,
+        content: Bytes,
+        mime: Option<String>
+    },
 
     Command(Command)
 }
 
 #[derive(Debug, Clone)]
 enum Link {
-    InvalidUrlExternal(String),
-    External(Url),
-
+    External(FileLocator),
     Internal(PathBuf),
-    /// Currently handled the same as [`Link::InvalidUrlExternal`], in future will create a new file on click
     NonExistentInternal(PathBuf)
 }
 
@@ -126,9 +127,11 @@ impl Pokisona {
 
     fn update(&mut self, msg: Message) -> Task<Message> {
         match msg {
-            Message::FileOpened { path, content } => {
-                self.file_store.insert(&path, MarkdownStore::new(content))
-            }
+            Message::FileOpened {
+                locator,
+                content,
+                mime
+            } => return self.file_store.insert(&locator, content, mime.as_deref()),
             Message::Focus(id) => return focus(id),
             Message::KeyEvent(event) => {
                 if let Some(command) = self.config.keybindings.get(&event) {
@@ -137,14 +140,13 @@ impl Pokisona {
             }
             Message::Hover(link) => {
                 self.hovered_link = Some(match link {
-                    Link::InvalidUrlExternal(raw) => HoveredLink::Error(raw),
                     Link::NonExistentInternal(path) => HoveredLink::Error(path.into_string()),
                     Link::Internal(path) => {
-                        let (data, task) = self.file_store.open_file(path);
+                        let (data, task) = self.file_store.open(FileLocator::Path(path));
                         self.hovered_link = Some(HoveredLink::Internal(data));
                         return task;
                     }
-                    Link::External(url) => HoveredLink::External(url.to_string())
+                    Link::External(locator) => HoveredLink::External(locator)
                 });
             }
             Message::HoverEnd => self.hovered_link = None,
@@ -167,7 +169,9 @@ impl Pokisona {
             }
             Command::Follow(link) => {
                 return match link {
-                    Link::Internal(path) => self.handle_command(Command::Open { path }),
+                    Link::Internal(path) => self.handle_command(Command::Open {
+                        locator: FileLocator::Path(path)
+                    }),
                     Link::External(url) => open::that(url.as_str())
                         .map(|_| Task::none())
                         .unwrap_or_else(|error| {
@@ -212,17 +216,15 @@ impl Pokisona {
                 self.focus = pane;
             }
             Command::QuitAll => return exit(),
-            Command::Open { mut path } => {
-                if path.extension().is_none() {
-                    path.set_extension("md");
-                }
-
-                let (file, task) = self.file_store.open_file(path);
+            Command::Open { locator } => {
+                let (file, task) = self.file_store.open(locator);
                 self.panes.get_mut(self.focus).unwrap().open(file);
                 return task;
             }
-            Command::VSplit { path, pane } => return self.split(path, pane, Axis::Vertical),
-            Command::HSplit { path, pane } => return self.split(path, pane, Axis::Horizontal),
+            Command::VSplit { locator, pane } => return self.split(locator, pane, Axis::Vertical),
+            Command::HSplit { locator, pane } => {
+                return self.split(locator, pane, Axis::Horizontal);
+            }
             Command::ScaleUp => self.scale += scale.default_step,
             Command::ScaleDown => {
                 let scale = self.scale - scale.default_step;
@@ -255,15 +257,15 @@ impl Pokisona {
 
     fn split(
         &mut self,
-        path: Option<Utf8PathBuf>,
+        locator: Option<FileLocator>,
         pane: Option<Pane>,
         axis: Axis
     ) -> Task<Message> {
         let pane = pane.unwrap_or(self.focus);
 
-        let (state, task) = match path {
-            Some(path) => {
-                let (file, task) = self.file_store.open_file(path);
+        let (state, task) = match locator {
+            Some(locator) => {
+                let (file, task) = self.file_store.open(locator);
                 (PaneState::new(file), task)
             }
             None => (
@@ -282,6 +284,7 @@ impl Pokisona {
 
 type PathBuf = Utf8PathBuf;
 type Path = Utf8Path;
+
 fn main() -> Result<()> {
     color_eyre::install()?;
     let (VaultName(vault_name), InitialFile(initial_file), config) = cli::handle_args()?;
@@ -290,7 +293,7 @@ fn main() -> Result<()> {
             let file_store = Box::leak(Box::new(FileStore::default()));
             let (first_pane_state, task) = match initial_file.clone() {
                 Some(initial_file) => {
-                    let (data, task) = file_store.open_file(initial_file);
+                    let (data, task) = file_store.open(initial_file);
                     (PaneState::new(data), task)
                 }
                 None => (PaneState::default(), Task::none())

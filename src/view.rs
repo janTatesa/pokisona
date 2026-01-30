@@ -18,15 +18,14 @@ pub use theme::Theme;
 use crate::{
     Element, ElementId, HoveredLink, Message, Pokisona,
     command::Command,
+    file_store::FileContent,
     view::iced_helpers::{BORDER_RADIUS, PADDING, SPACING, button, button_enabled_if}
 };
 
 impl Pokisona {
     pub(super) fn view(&self) -> Element<'_> {
         let theme = self.config.theme;
-        let vault_name = container(self.vault_name.as_str())
-            .align_x(Alignment::End)
-            .width(Length::Fill);
+        let vault_name = self.vault_name.as_str();
 
         let bar_content: Element<'_> = match (
             self.command_history.currently_selected(),
@@ -41,14 +40,22 @@ impl Pokisona {
                         .on_submit(Command::CommandLineSubmit.into())
                         .id(ElementId::CommandInput)
                         .padding(0)
+                        .width(Length::Fill)
                 )
                 .on_show(|_| Message::Focus(ElementId::CommandInput)),
                 vault_name
             ]
             .spacing(0)
             .into(),
-            (_, _, Some(error)) => row![text(error, theme.danger), vault_name].into(),
-            _ => vault_name.into()
+            (_, _, Some(error)) => row![
+                container(text(error, theme.danger)).width(Length::Fill),
+                vault_name
+            ]
+            .into(),
+            _ => container(vault_name)
+                .width(Length::Fill)
+                .align_x(Alignment::End)
+                .into()
         };
 
         let bar = container(bar_content)
@@ -61,7 +68,7 @@ impl Pokisona {
 
             let hovered_link = match link {
                 HoveredLink::Internal(file_data) => {
-                    let bar = container(file_data.path().as_str())
+                    let bar = container(file_data.locator().as_str())
                         .align_x(Alignment::Center)
                         .width(Length::Fill)
                         .border(border::rounded(Radius::default().bottom(BORDER_RADIUS)))
@@ -73,7 +80,9 @@ impl Pokisona {
                     container(content)
                 }
                 HoveredLink::Error(url) => container(text(url, theme.danger)).padded(),
-                HoveredLink::External(url) => container(text(url, theme.link_external)).padded()
+                HoveredLink::External(locator) => {
+                    container(text(locator.as_str(), theme.link_external)).padded()
+                }
             }
             .background(theme.base)
             .border(border)
@@ -91,10 +100,7 @@ impl Pokisona {
         let windows = PaneGrid::new(&self.panes, |pane, state, _maximised| {
             let title = state
                 .current_file()
-                .map(|file| {
-                    let path = file.path().as_str();
-                    path.strip_suffix(".md").unwrap_or(path)
-                })
+                .map(|file| file.locator().as_str())
                 .unwrap_or("[scratch]");
             let (text_color, background, button_disabled_color) = if pane == self.focus {
                 (theme.text, theme.mantle, theme.overlay0)
@@ -118,14 +124,14 @@ impl Pokisona {
                     ),
                     button(
                         Command::VSplit {
-                            path: None,
+                            locator: None,
                             pane: Some(pane)
                         },
                         text_color
                     ),
                     button(
                         Command::HSplit {
-                            path: None,
+                            locator: None,
                             pane: Some(pane)
                         },
                         text_color
@@ -183,5 +189,19 @@ impl Pokisona {
 
         let ui = column![windows, bar];
         stack![ui, hovered_link].into()
+    }
+}
+
+impl FileContent {
+    fn view(&self, theme: Theme) -> Element<'_> {
+        match self {
+            FileContent::Markdown(markdown_store) => markdown_store.inner().view(theme),
+            FileContent::Image(handle) => {
+                container(widget::image(handle.clone()).border_radius(BORDER_RADIUS))
+                    .shadowed()
+                    .into()
+            }
+            FileContent::Unknown => "Unknow file type".into()
+        }
     }
 }

@@ -51,8 +51,8 @@ external_link_display          =  { (!("]" | NEWLINE) ~ ANY)+ }
 external_link_url_angled       = _{ "<" ~ external_link_url_angled_inner ~ ">" }
 external_link_url_angled_inner =  { (!(">" | NEWLINE) ~ ANY)* }
 external_link_url              = { (!("\\" | ")" | WHITE_SPACE) ~ ANY)* }
-external_link                  =  { "[" ~ external_link_display ~ "](" ~ (external_link_url_angled | external_link_url) ~ ")" }
-external_embed                 = { "![]" ~ "(" ~ (external_link_url_angled | external_link_url) ~ ")" }
+external_link                  =  { "[" ~ external_link_display? ~ "](" ~ (external_link_url_angled | external_link_url) ~ ")" }
+external_embed                 = { "![" ~ external_link_display? ~  "](" ~ (external_link_url_angled | external_link_url) ~ ")" }
 
 file_link      = { (!(NEWLINE | "|" | "]]" | "#") ~ ANY)* }
 reference_link = { "^" ~ (!("]]" | WHITE_SPACE) ~ ANY)+ }
@@ -60,9 +60,7 @@ heading_link   = { (!(NEWLINE | "|" | "]]") ~ ANY)+ }
 link_display   =  { (!(NEWLINE | "]]") ~ ANY)* }
 link_target    = { file_link? ~ ("#" ~ (reference_link | heading_link))? }
 link           =  { "[[" ~ link_target ~ ("|" ~ link_display)? ~ "]]" }
-
-embed_inner = {(!("]]" | NEWLINE) ~ ANY)*} 
-embed          =  { "![[" ~  embed_inner ~ "]]" }
+embed          =  { "![[" ~ link_target ~ ("|" ~ link_display)? ~ "]]" }
 
 escaped_char = { "\\" ~ ANY }
 soft_break   = { "\\" ~ NEWLINE }

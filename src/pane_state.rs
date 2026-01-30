@@ -16,6 +16,7 @@ impl PaneState {
         }
     }
 
+    /// Returns a new [`PaneState`] with the history of the current file
     pub fn split(&self) -> Self {
         PaneState {
             history: self

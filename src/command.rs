@@ -8,7 +8,7 @@ use pest::Parser;
 use pest_derive::Parser;
 use serde::{Deserialize, Deserializer, de};
 
-use crate::{Link, Message, PathBuf};
+use crate::{Link, Message, file_store::FileLocator};
 
 #[derive(Parser)]
 #[grammar = "./command.pest"]
@@ -50,18 +50,19 @@ impl FromStr for Command {
             "quit" | "q" => Command::Quit(None),
             "quit-all" | "qa" => Command::QuitAll,
             "open" | "o" | "edit" | "e" => Command::Open {
-                path: pairs
+                locator: pairs
                     .next()
                     .ok_or(CommandParseError::NotEnoughArgs)?
                     .as_str()
-                    .into()
+                    .parse()
+                    .unwrap()
             },
             "vsplit" | "vs" => Command::VSplit {
-                path: pairs.next().map(|pair| pair.as_str().into()),
+                locator: pairs.next().map(|pair| pair.as_str().parse().unwrap()),
                 pane: None
             },
             "hsplit" | "hs" => Command::HSplit {
-                path: pairs.next().map(|pair| pair.as_str().into()),
+                locator: pairs.next().map(|pair| pair.as_str().parse().unwrap()),
                 pane: None
             },
             // "w" => Self::Write,
@@ -125,14 +126,14 @@ pub(crate) enum Command {
     // WriteQuit,
     // WriteQuitAll,
     Open {
-        path: PathBuf
+        locator: FileLocator
     },
     VSplit {
-        path: Option<PathBuf>,
+        locator: Option<FileLocator>,
         pane: Option<Pane>
     },
     HSplit {
-        path: Option<PathBuf>,
+        locator: Option<FileLocator>,
         pane: Option<Pane>
     },
     FocusPane(Pane),

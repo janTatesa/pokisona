@@ -5,7 +5,9 @@ use std::{
     ptr::NonNull
 };
 
-use crate::markdown::Markdown;
+use iced::Task;
+
+use crate::{Message, file_store::FileStore, markdown::Markdown};
 
 #[derive(Debug)]
 pub struct MarkdownStore {
@@ -14,14 +16,15 @@ pub struct MarkdownStore {
 }
 
 impl MarkdownStore {
-    pub fn new(input: String) -> Self {
+    pub fn new(input: String, file_store: &'static FileStore) -> (Self, Task<Message>) {
         let source = input.leak();
         let source_ptr = NonNull::from_mut(source);
-        let markdown = ManuallyDrop::new(Markdown::parse(source));
-        Self {
-            markdown,
+        let (markdown, task) = Markdown::parse(source, file_store);
+        let markdown_store = Self {
+            markdown: ManuallyDrop::new(markdown),
             source: source_ptr
-        }
+        };
+        (markdown_store, task)
     }
 
     pub fn inner<'a>(&'a self) -> &'a Markdown<'a> {
