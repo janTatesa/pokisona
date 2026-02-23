@@ -1,173 +1,110 @@
 use std::{
-    fmt::{Display, Formatter},
-    str::FromStr
+    iter::Enumerate,
+    str::{Chars, FromStr}
 };
 
-use iced::widget::pane_grid::{self, Direction, Pane, ResizeEvent, Target};
-use pest::Parser;
-use pest_derive::Parser;
-use serde::{Deserialize, Deserializer, de};
+use crate::PathBuf;
 
-use crate::{Link, Message, file_store::FileLocator};
-
-#[derive(Parser)]
-#[grammar = "./command.pest"]
-struct CommandParser;
-
-#[allow(clippy::large_enum_variant)]
-#[derive(Debug)]
-pub enum CommandParseError {
-    InvalidArg(String),
-    NotFound,
-    NotEnoughArgs,
-    TooManyArgs,
-    InvalidSyntax(pest::error::Error<Rule>)
+#[derive(Clone)]
+pub enum Command {
+    Quit,
+    ForceQuit,
+    Write(Option<PathBuf>),
+    ForceWrite(Option<PathBuf>),
+    WriteQuit(Option<PathBuf>),
+    ForceWriteQuit(Option<PathBuf>),
+    Reload,
+    Remove,
+    Open(PathBuf),
+    Move(PathBuf),
+    ForceMove(PathBuf)
 }
 
-impl Display for CommandParseError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let msg = match self {
-            CommandParseError::NotFound => "Command not found",
-            CommandParseError::NotEnoughArgs => "Not enough arguments",
-            CommandParseError::InvalidSyntax(error) => &format!("Invalid syntax: {error}"),
-            CommandParseError::TooManyArgs => "Too many arguments",
-            CommandParseError::InvalidArg(arg) => &format!("Invalid argument: {arg}")
+struct CommandArgsParser<'a> {
+    str: &'a str,
+    inner: Enumerate<Chars<'a>>
+}
+
+// TODO: use chumsky
+impl<'a> Iterator for CommandArgsParser<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (mut start_idx, char) = self.inner.next()?;
+        let inner = &mut self.inner;
+        let end_idx = match char {
+            '\'' if start_idx != 0
+                && self.str.len() > start_idx + 1
+                && self.str[(start_idx + 1)..].contains('\'') =>
+            {
+                start_idx += 1;
+                inner
+                    .take_while(|(_, char)| *char != '\'' && !char.is_whitespace())
+                    .last()?
+                    .0
+            }
+            '"' if start_idx != 0
+                && self.str.len() > start_idx + 1
+                && self.str[(start_idx + 1)..].contains('"') =>
+            {
+                start_idx += 1;
+                inner
+                    .take_while(|(_, char)| *char != '"' && !char.is_whitespace())
+                    .last()?
+                    .0
+            }
+            _ => inner
+                .take_while(|(_, char)| !char.is_whitespace())
+                .last()
+                .map(|(num, _)| num)
+                .unwrap_or(start_idx)
         };
 
-        f.write_str(msg)
+        Some(&self.str[start_idx..=end_idx])
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum CommandParseErr {
+    TooManyArgs,
+    NotEnoughArgs,
+    UnknownCommand
 }
 
 impl FromStr for Command {
-    type Err = CommandParseError;
+    type Err = CommandParseErr;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut pairs =
-            CommandParser::parse(Rule::main, s).map_err(CommandParseError::InvalidSyntax)?;
-
-        // TODO: parse more variants (maybe make a derive macro)
-        let command = match pairs.next().unwrap().as_str() {
-            "quit" | "q" => Command::Quit(None),
-            "quit-all" | "qa" => Command::QuitAll,
-            "open" | "o" | "edit" | "e" => Command::Open {
-                locator: pairs
-                    .next()
-                    .ok_or(CommandParseError::NotEnoughArgs)?
-                    .as_str()
-                    .parse()
-                    .unwrap()
-            },
-            "vsplit" | "vs" => Command::VSplit {
-                locator: pairs.next().map(|pair| pair.as_str().parse().unwrap()),
-                pane: None
-            },
-            "hsplit" | "hs" => Command::HSplit {
-                locator: pairs.next().map(|pair| pair.as_str().parse().unwrap()),
-                pane: None
-            },
-            // "w" => Self::Write,
-            // "wa" => Self::WriteAll,
-            // "x" | "wq" => Self::WriteQuit,
-            // "xa" | "wqa" => Self::WriteQuitAll,
-            "scale-up" => Command::ScaleUp,
-            "scale-down" => Command::ScaleDown,
-            "scale-reset" => Command::ScaleReset,
-            "history-up" => Command::HistoryUp,
-            "history-down" => Command::HistoryDown,
-            "command-mode-open" => Command::CommandModeOpen,
-            "noop" => Command::Noop,
-            "command-mode-exit" => Command::CommandModeExit,
-            "file-history-forward" => Command::FileHistoryForward,
-            "file-history-backward" => Command::FileHistoryBackward,
-            "focus-adjacent" => Command::FocusAdjacent(
-                match pairs
-                    .next()
-                    .ok_or(CommandParseError::NotEnoughArgs)?
-                    .as_str()
-                {
-                    "up" => Direction::Up,
-                    "down" => Direction::Down,
-                    "left" => Direction::Left,
-                    "right" => Direction::Right,
-                    arg => return Err(CommandParseError::InvalidArg(arg.to_string()))
-                }
-            ),
-            _ => return Err(CommandParseError::NotFound)
+    fn from_str(str: &str) -> Result<Self, Self::Err> {
+        let mut args = CommandArgsParser {
+            str,
+            inner: str.chars().enumerate()
+        };
+        let command_name = args.next().ok_or(CommandParseErr::NotEnoughArgs)?;
+        let command = match command_name {
+            "q" | "quit" => Command::Quit,
+            "q!" | "quit!" => Command::ForceQuit,
+            "w" | "write" => Command::Write(args.next().map(PathBuf::from)),
+            "w!" | "write!" => Command::ForceWrite(args.next().map(PathBuf::from)),
+            "wq" | "x" | "write-quit" => Command::WriteQuit(args.next().map(PathBuf::from)),
+            "wq!" | "x!" | "write-quit!" => Command::ForceWriteQuit(args.next().map(PathBuf::from)),
+            "o" | "open" => {
+                Command::Open(args.next().ok_or(CommandParseErr::NotEnoughArgs)?.into())
+            }
+            "rl" | "reload" => Command::Reload,
+            "rm" | "remove" => Command::Remove,
+            "mv" | "move" => {
+                Command::Move(args.next().ok_or(CommandParseErr::NotEnoughArgs)?.into())
+            }
+            "mv!" | "move!" => {
+                Command::ForceMove(args.next().ok_or(CommandParseErr::NotEnoughArgs)?.into())
+            }
+            _ => return Err(CommandParseErr::UnknownCommand)
         };
 
-        if pairs.next().is_some() {
-            return Err(CommandParseError::TooManyArgs);
+        if args.next().is_some() {
+            return Err(CommandParseErr::TooManyArgs);
         }
 
         Ok(command)
-    }
-}
-
-impl<'a> Deserialize<'a> for Command {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'a>
-    {
-        let string = String::deserialize(deserializer)?;
-        Self::from_str(&string).map_err(de::Error::custom)
-    }
-}
-
-/// Unlike [`Message`](crate::app::Message) [`Command`] can be produced by the user (and in future plugins). Generally anything that's not the result of a [`Future`] or which only makes sense with a mouse interaction (such as [`Message::HoverEnd`](crate::app::Message::HoverEnd)) should be a [`Command`] to maximise keyboard centricism and plugin capabilities. However currently the usser cannot construct all possible instances of command due to [`Pane`] having a private field. This might be fixed by either implementing our own [`pane_grid`] (which we might eventually do anyways) or generating our own pane ids
-// TODO: have commands syntax in it's definition
-#[allow(clippy::enum_variant_names)]
-#[derive(Clone, Debug)]
-pub(crate) enum Command {
-    /// When [`None`] will quit the focused [`Pane`]
-    Quit(Option<Pane>),
-    QuitAll,
-    // Write,
-    // WriteAll,
-    // WriteQuit,
-    // WriteQuitAll,
-    Open {
-        locator: FileLocator
-    },
-    VSplit {
-        locator: Option<FileLocator>,
-        pane: Option<Pane>
-    },
-    HSplit {
-        locator: Option<FileLocator>,
-        pane: Option<Pane>
-    },
-    FocusPane(Pane),
-    DropPane {
-        pane: Pane,
-        target: Target
-    },
-    ResizePane(ResizeEvent),
-
-    FocusAdjacent(pane_grid::Direction),
-
-    Error(String),
-
-    Follow(Link),
-
-    ScaleUp,
-    ScaleDown,
-    ScaleReset,
-
-    CommandLineSet(String),
-    CommandLineSubmit,
-    HistoryUp,
-    HistoryDown,
-    CommandModeOpen,
-    CommandModeExit,
-
-    FileHistoryForward,
-    FileHistoryBackward,
-
-    Noop
-}
-
-impl From<Command> for Message {
-    fn from(value: Command) -> Self {
-        Self::Command(value)
     }
 }

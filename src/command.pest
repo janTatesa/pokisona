@@ -1,7 +1,0 @@
-// While it might seem overkill to parse them with pest, we'll evetually make them more complex
-
-ident = { (ASCII_ALPHA | "-")+ }
-// TODO: support ' in args by backslashes
-arg_spaced    =  { (!"'" ~ ANY)+ }
-arg_spaceless =  { (!WHITE_SPACE ~ ANY)+ }
-main          = _{ ident ~ (WHITE_SPACE+ ~ ("'" ~ arg_spaced ~ "'" | arg_spaceless))? }

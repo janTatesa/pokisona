@@ -1,329 +1,415 @@
 #![deny(clippy::disallowed_types)]
 mod cli;
 mod command;
-mod command_history;
-mod config;
-mod file_store;
-mod markdown;
-mod pane_state;
-mod view;
+mod error;
+mod mode;
 
-use std::rc::Rc;
+use std::{fs, mem};
 
-use bytes::Bytes;
 use camino::{Utf8Path, Utf8PathBuf};
-use color_eyre::Result;
+use catppuccin::PALETTE;
 use iced::{
-    Event, Point, Task, event, exit, mouse,
+    Border, Font, Length, Theme, exit, padding,
     widget::{
-        Id,
+        self, Button, Id, button, column, container,
         operation::focus,
-        pane_grid::{self, Axis, Pane}
-    },
-    window
+        row,
+        text::{self, Wrapping},
+        text_editor::{self, Content}
+    }
 };
-use lucide_icons::LUCIDE_FONT_BYTES;
-use url::Url;
+use lucide_icons::{Icon, LUCIDE_FONT_BYTES};
 
 use crate::{
     cli::{InitialFile, VaultName},
     command::Command,
-    command_history::CommandHistory,
-    config::{Config, Keybinding},
-    file_store::{FileData, FileLocator, FileStore},
-    pane_state::PaneState,
-    view::Theme
+    error::{Error, Result},
+    mode::Mode
 };
 
-type Element<'a> = iced::Element<'a, Message, Theme>;
 struct Pokisona {
-    config: Config,
-
     vault_name: String,
-
+    bottom_bar: BottomBar,
+    file: Option<File>,
     scale: f32,
-
-    file_store: &'static FileStore,
-
-    command_history: CommandHistory,
-    typed_command: Option<String>,
-
-    error: Option<String>,
-
-    panes: pane_grid::State<PaneState>,
-    focus: pane_grid::Pane,
-
-    hovered_link: Option<HoveredLink>,
-    mouse_pos: Point
+    editor_content: text_editor::Content,
+    mode: Mode
 }
 
-enum HoveredLink {
-    Internal(Rc<FileData>),
-    Error(String),
-    External(FileLocator)
+#[derive(Clone)]
+struct File {
+    edited: bool,
+    path: PathBuf
 }
 
-/// Most [`Message`]s should be put in [`Command`], see it's documentation
-#[derive(Debug, Clone)]
+#[derive(Clone)]
+enum BottomBar {
+    Command(String),
+    Error(Error),
+    None
+}
+
+type Element<'a, M = Message> = iced::Element<'a, M>;
+type Task<M = Message> = iced::Task<M>;
+
+#[derive(Clone)]
 enum Message {
-    Focus(ElementId),
-
-    Hover(Link),
-    HoverEnd,
-    MouseMoved(Point),
-
-    KeyEvent(Keybinding),
-    FileOpened {
-        locator: FileLocator,
-        content: Bytes,
-        mime: Option<String>
-    },
-
-    Command(Command)
-}
-
-#[derive(Debug, Clone)]
-enum Link {
-    External(FileLocator),
-    Internal(PathBuf),
-    NonExistentInternal(PathBuf)
-}
-
-impl Message {
-    fn from_iced_event(event: Event, _: event::Status, _: window::Id) -> Option<Self> {
-        match event {
-            Event::Mouse(mouse::Event::CursorMoved { position }) => {
-                Some(Self::MouseMoved(position))
-            }
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Back)) => {
-                Some(Command::FileHistoryBackward.into())
-            }
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Forward)) => {
-                Some(Command::FileHistoryForward.into())
-            }
-            Event::Keyboard(event) => Keybinding::from_iced_key_event(event).map(Self::KeyEvent),
-            _ => None
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ElementId {
-    CommandInput
-}
-
-impl From<ElementId> for Id {
-    fn from(val: ElementId) -> Self {
-        Self::new(match val {
-            ElementId::CommandInput => "command-input"
-        })
-    }
-}
-
-impl Pokisona {
-    fn theme(&self) -> Theme {
-        self.config.theme
-    }
-
-    fn update(&mut self, msg: Message) -> Task<Message> {
-        match msg {
-            Message::FileOpened {
-                locator,
-                content,
-                mime
-            } => return self.file_store.insert(&locator, content, mime.as_deref()),
-            Message::Focus(id) => return focus(id),
-            Message::KeyEvent(event) => {
-                if let Some(command) = self.config.keybindings.get(&event) {
-                    return self.handle_command(command.clone());
-                }
-            }
-            Message::Hover(link) => {
-                self.hovered_link = Some(match link {
-                    Link::NonExistentInternal(path) => HoveredLink::Error(path.into_string()),
-                    Link::Internal(path) => {
-                        let (data, task) = self.file_store.open(FileLocator::Path(path));
-                        self.hovered_link = Some(HoveredLink::Internal(data));
-                        return task;
-                    }
-                    Link::External(locator) => HoveredLink::External(locator)
-                });
-            }
-            Message::HoverEnd => self.hovered_link = None,
-            Message::MouseMoved(point) => self.mouse_pos = point,
-            Message::Command(command) => {
-                self.error = None;
-                return self.handle_command(command);
-            }
-        }
-
-        Task::none()
-    }
-
-    fn handle_command(&mut self, command: Command) -> Task<Message> {
-        let scale = self.config.scale;
-        match command {
-            Command::CommandLineSet(command) => {
-                self.command_history.deselect();
-                self.typed_command = Some(command)
-            }
-            Command::Follow(link) => {
-                return match link {
-                    Link::Internal(path) => self.handle_command(Command::Open {
-                        locator: FileLocator::Path(path)
-                    }),
-                    Link::External(url) => open::that(url.as_str())
-                        .map(|_| Task::none())
-                        .unwrap_or_else(|error| {
-                            Task::done(Command::Error(error.to_string()).into())
-                        }),
-                    _ => Task::none()
-                };
-            }
-            Command::Error(error) => self.error = Some(error),
-            Command::CommandLineSubmit => {
-                let typed_command = self.typed_command.take();
-                let typed_command = self
-                    .command_history
-                    .currently_selected()
-                    .or(typed_command.as_deref())
-                    .unwrap_or_default();
-                if typed_command.is_empty() {
-                    return Task::none();
-                }
-
-                let command: Command = match typed_command.parse() {
-                    Ok(command) => command,
-                    Err(error) => {
-                        self.error = Some(format!(
-                            "Error parsing command \"{typed_command}\": {error}"
-                        ));
-
-                        return Task::none();
-                    }
-                };
-
-                self.command_history.push(typed_command.to_owned());
-                return self.handle_command(command);
-            }
-            Command::Quit(pane) => {
-                let pane = pane.unwrap_or(self.focus);
-
-                let Some((_state, pane)) = self.panes.close(pane) else {
-                    return exit();
-                };
-
-                self.focus = pane;
-            }
-            Command::QuitAll => return exit(),
-            Command::Open { locator } => {
-                let (file, task) = self.file_store.open(locator);
-                self.panes.get_mut(self.focus).unwrap().open(file);
-                return task;
-            }
-            Command::VSplit { locator, pane } => return self.split(locator, pane, Axis::Vertical),
-            Command::HSplit { locator, pane } => {
-                return self.split(locator, pane, Axis::Horizontal);
-            }
-            Command::ScaleUp => self.scale += scale.default_step,
-            Command::ScaleDown => {
-                let scale = self.scale - scale.default_step;
-                if scale > 0. {
-                    self.scale = scale;
-                }
-            }
-            Command::ScaleReset => self.scale = scale.default,
-            Command::HistoryUp => self.command_history.select_up(),
-            Command::HistoryDown => self.command_history.select_down(),
-            Command::CommandModeOpen => self.typed_command = Some(String::new()),
-            Command::Noop => {}
-            Command::CommandModeExit => self.typed_command = None,
-            Command::FocusPane(pane) => self.focus = pane,
-            Command::DropPane { pane, target } => self.panes.drop(pane, target),
-            Command::ResizePane(resize_event) => {
-                self.panes.resize(resize_event.split, resize_event.ratio)
-            }
-            Command::FocusAdjacent(direction) => {
-                if let Some(pane) = self.panes.adjacent(self.focus, direction) {
-                    self.focus = pane
-                }
-            }
-            Command::FileHistoryForward => self.panes.get_mut(self.focus).unwrap().forward(),
-            Command::FileHistoryBackward => self.panes.get_mut(self.focus).unwrap().backward()
-        }
-
-        Task::none()
-    }
-
-    fn split(
-        &mut self,
-        locator: Option<FileLocator>,
-        pane: Option<Pane>,
-        axis: Axis
-    ) -> Task<Message> {
-        let pane = pane.unwrap_or(self.focus);
-
-        let (state, task) = match locator {
-            Some(locator) => {
-                let (file, task) = self.file_store.open(locator);
-                (PaneState::new(file), task)
-            }
-            None => (
-                self.panes
-                    .get(pane)
-                    .map(PaneState::split)
-                    .unwrap_or_default(),
-                Task::none()
-            )
-        };
-
-        self.focus = self.panes.split(axis, pane, state).unwrap().0;
-        task
-    }
+    EnterCommandMode,
+    ExitCommandMode,
+    Command(Command),
+    SwitchMode(Mode),
+    EditCommand(String),
+    SubmitCommand,
+    EditorAction(text_editor::Action)
 }
 
 type PathBuf = Utf8PathBuf;
 type Path = Utf8Path;
 
-fn main() -> Result<()> {
+fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
-    let (VaultName(vault_name), InitialFile(initial_file), config) = cli::handle_args()?;
+    let (VaultName(vault_name), InitialFile(path)) = cli::handle_args()?;
+    let (file, bottom_bar, content) = match path {
+        Some(path) => match fs::read_to_string(&path) {
+            Ok(content) => (
+                Some(File {
+                    edited: false,
+                    path
+                }),
+                BottomBar::None,
+                text_editor::Content::with_text(&content)
+            ),
+            Err(error) => (
+                None,
+                BottomBar::Error(error.into()),
+                text_editor::Content::new()
+            )
+        },
+        None => (None, BottomBar::None, text_editor::Content::new())
+    };
+
     iced::application(
         move || {
-            let file_store = Box::leak(Box::new(FileStore::default()));
-            let (first_pane_state, task) = match initial_file.clone() {
-                Some(initial_file) => {
-                    let (data, task) = file_store.open(initial_file);
-                    (PaneState::new(data), task)
-                }
-                None => (PaneState::default(), Task::none())
-            };
-
-            let (panes, focus) = pane_grid::State::new(first_pane_state);
-
-            let app = Pokisona {
-                config: config.clone(),
+            let pokisona = Pokisona {
                 vault_name: vault_name.clone(),
-                typed_command: None,
-                error: None,
-                command_history: CommandHistory::default(),
-                scale: config.scale.default,
-                hovered_link: None,
-                file_store,
-                mouse_pos: Point::ORIGIN,
-                panes,
-                focus
+                file: file.clone(),
+                mode: Mode::Normal,
+                bottom_bar: bottom_bar.clone(),
+                editor_content: content.clone(),
+                scale: 1.0
             };
 
-            (app, task)
+            (pokisona, focus("editor"))
         },
         Pokisona::update,
         Pokisona::view
     )
     .font(LUCIDE_FONT_BYTES)
     .theme(Pokisona::theme)
-    .subscription(|_| event::listen_with(Message::from_iced_event))
     .scale_factor(|app| app.scale)
     .run()?;
     Ok(())
+}
+
+const CATPPUCCIN_MOCHA: catppuccin::FlavorColors = PALETTE.mocha.colors;
+impl Pokisona {
+    fn update(&mut self, msg: Message) -> Task {
+        let task = match self.try_update(msg) {
+            Ok(task) => task,
+            Err(error) => {
+                self.bottom_bar = BottomBar::Error(error);
+                focus(Id::new("editor"))
+            }
+        };
+
+        let focus = match self.bottom_bar {
+            BottomBar::Command(_) => focus("command-input"),
+            _ => focus("editor")
+        };
+
+        Task::batch([task, focus])
+    }
+
+    fn try_update(&mut self, msg: Message) -> Result<Task> {
+        match msg {
+            Message::ExitCommandMode => self.bottom_bar = BottomBar::None,
+            Message::SwitchMode(mode) => self.mode = mode,
+            Message::EditCommand(command) => self.bottom_bar = BottomBar::Command(command),
+            Message::SubmitCommand => {
+                let BottomBar::Command(command) = &mut self.bottom_bar else {
+                    return Ok(Task::none());
+                };
+
+                if command.is_empty() {
+                    self.bottom_bar = BottomBar::None;
+                    return Ok(Task::none());
+                }
+
+                let command = mem::take(command);
+                self.bottom_bar = BottomBar::None;
+                return self.handle_command(command.parse::<Command>()?);
+            }
+            Message::EditorAction(action) => {
+                self.bottom_bar = BottomBar::None;
+                if let text_editor::Action::Edit(_) = &action
+                    && let Some(File { edited, .. }) = &mut self.file
+                {
+                    *edited = true;
+                }
+
+                self.editor_content.perform(action);
+            }
+            Message::Command(command) => return self.handle_command(command),
+            Message::EnterCommandMode => {
+                self.bottom_bar = BottomBar::Command(String::new());
+            }
+        };
+
+        Ok(Task::none())
+    }
+
+    fn handle_command(&mut self, command: Command) -> Result<Task> {
+        match command {
+            Command::Quit => {
+                if self.file.as_ref().is_none_or(|file| !file.edited) {
+                    Ok(exit())
+                } else {
+                    Err(Error::CannotQuitWithUnsavedBuffer)
+                }
+            }
+            Command::ForceQuit => Ok(exit()),
+            Command::Write(path) => self.write(path, false, Task::none()),
+            Command::ForceWrite(path) => self.write(path, true, Task::none()),
+            Command::WriteQuit(path) => self.write(path, false, exit()),
+            Command::ForceWriteQuit(path) => self.write(path, true, exit()),
+            Command::Open(path) => {
+                let exists = path.exists();
+                self.file = Some(File {
+                    edited: !exists,
+                    path: path.clone()
+                });
+
+                self.editor_content = Content::new();
+                if exists {
+                    self.editor_content =
+                        text_editor::Content::with_text(&fs::read_to_string(path)?);
+                }
+
+                Ok(Task::none())
+            }
+            Command::Reload => {
+                if let Some(File { edited, path }) = &mut self.file {
+                    self.editor_content =
+                        text_editor::Content::with_text(&fs::read_to_string(&*path)?);
+                    *edited = false;
+                }
+
+                Ok(Task::none())
+            }
+            Command::Remove => {
+                if let Some(File { path, .. }) = &self.file {
+                    fs::remove_file(path)?;
+                    self.file = None;
+                }
+
+                Ok(Task::none())
+            }
+            Command::Move(new_path) => {
+                if new_path.parent().is_some_and(|path| !path.exists()) {
+                    return Err(Error::MoveParentDirectoryDoesntExist);
+                }
+
+                if let Some(File { path, .. }) = &self.file
+                    && path.exists()
+                {
+                    fs::rename(path, &new_path)?
+                }
+
+                self.file = Some(File {
+                    edited: self.file.as_ref().is_none_or(|file| file.edited),
+                    path: new_path
+                });
+
+                Ok(Task::none())
+            }
+            Command::ForceMove(new_path) => {
+                if let Some(parent) = new_path.parent()
+                    && !parent.exists()
+                {
+                    fs::create_dir_all(parent)?;
+                }
+
+                if let Some(File { path, .. }) = &self.file
+                    && path.exists()
+                {
+                    fs::rename(path, &new_path)?
+                }
+
+                self.file = Some(File {
+                    edited: self.file.as_ref().is_none_or(|file| file.edited),
+                    path: new_path
+                });
+
+                Ok(Task::none())
+            }
+        }
+    }
+
+    fn write(&mut self, path: Option<PathBuf>, force: bool, task: Task) -> Result<Task> {
+        if let Some(path) = path {
+            self.file = Some(File { edited: true, path });
+        }
+
+        let Some(File { edited, path }) = &mut self.file else {
+            return Err(Error::NoPathSet);
+        };
+
+        if !*edited {
+            return Ok(Task::none());
+        }
+
+        *edited = false;
+
+        if let Some(parent) = path.parent()
+            && parent != ""
+            && !parent.exists()
+        {
+            if force {
+                fs::create_dir(&parent)?;
+            } else {
+                return Err(Error::WriteParentDirectoryDoesntExist);
+            }
+        }
+
+        fs::write(path, self.editor_content.text())?;
+        Ok(task)
+    }
+
+    const HIGHLIGHT_SCALE_ALPHA: f32 = 0.5;
+    const TEXT_EDITOR_LINE_WIDTH: f32 = 700.0;
+    const PADDING: f32 = 5.0;
+    fn view(&self) -> Element<'_> {
+        let editor = widget::text_editor(&self.editor_content)
+            .style(|_, _| text_editor::Style {
+                background: CATPPUCCIN_MOCHA.base.into(),
+                border: Border::default(),
+                placeholder: CATPPUCCIN_MOCHA.text.into(),
+                value: CATPPUCCIN_MOCHA.text.into(),
+                selection: self.mode.color().scale_alpha(Self::HIGHLIGHT_SCALE_ALPHA)
+            })
+            .on_action(Message::EditorAction)
+            .width(Self::TEXT_EDITOR_LINE_WIDTH)
+            .wrapping(Wrapping::WordOrGlyph)
+            .key_binding(self.mode.bindings())
+            .padding(Self::PADDING)
+            .height(Length::Fill)
+            .id("editor");
+        let editor = container(editor).center_x(Length::Fill);
+
+        let mode = container(self.mode.as_ref())
+            .style(|_| container::Style {
+                text_color: Some(CATPPUCCIN_MOCHA.crust.into()),
+                background: Some(self.mode.color().into()),
+                ..Default::default()
+            })
+            .padding(padding::horizontal(Self::PADDING));
+
+        let save_button = self.file.as_ref().filter(|file| file.edited).map(|_| {
+            Self::button(Icon::Save)
+                .style(|_, status| match status {
+                    button::Status::Active => button::Style {
+                        text_color: CATPPUCCIN_MOCHA.subtext0.into(),
+                        ..Default::default()
+                    },
+                    button::Status::Hovered => button::Style {
+                        text_color: self.mode.color().into(),
+                        ..Default::default()
+                    },
+                    button::Status::Pressed => button::Style {
+                        text_color: CATPPUCCIN_MOCHA.overlay0.into(),
+                        ..Default::default()
+                    },
+                    button::Status::Disabled => todo!()
+                })
+                .on_press(Message::Command(Command::Write(None)))
+                .padding(0)
+        });
+
+        let path = container(
+            self.file
+                .as_ref()
+                .map(|file| widget::text(file.path.as_str()))
+                .unwrap_or(widget::text("[scratch]").color(CATPPUCCIN_MOCHA.subtext0))
+        )
+        .center_x(Length::Fill);
+        let bar_left =
+            container(row![mode, save_button].spacing(Self::PADDING)).width(Length::Fill);
+        let bar = container(row![
+            bar_left,
+            path,
+            container(self.vault_name.as_str())
+                .align_right(Length::Fill)
+                .padding(padding::right(Self::PADDING))
+        ])
+        .style(|_| container::Style {
+            background: Some(CATPPUCCIN_MOCHA.crust.into()),
+            ..Default::default()
+        });
+
+        let bottom_bar: Option<Element<'_>> = match &self.bottom_bar {
+            BottomBar::Command(command) => Some(
+                sweeten::widget::text_input("Enter command", &command)
+                    .on_blur(Message::ExitCommandMode)
+                    .on_input(Message::EditCommand)
+                    .on_submit(Message::SubmitCommand)
+                    .width(Length::Fill)
+                    .id("command-input")
+                    .icon(sweeten::widget::text_input::Icon {
+                        font: Font::DEFAULT,
+                        code_point: ':',
+                        size: None,
+                        spacing: 0.0,
+                        side: sweeten::widget::text_input::Side::Left
+                    })
+                    .style(|theme: &Theme, _| sweeten::widget::text_input::Style {
+                        background: theme.palette().background.into(),
+                        border: Border::default(),
+                        icon: self.mode.color(),
+                        placeholder: self.theme().extended_palette().secondary.base.color,
+                        value: self.theme().palette().text,
+                        selection: self.mode.color().scale_alpha(Self::HIGHLIGHT_SCALE_ALPHA)
+                    })
+                    .padding(0)
+                    .into()
+            ),
+            BottomBar::Error(error) => {
+                Some(widget::text(error.to_string()).style(text::danger).into())
+            }
+            BottomBar::None => None
+        };
+
+        column![editor, bar, bottom_bar].into()
+    }
+
+    // TODO: use a custom theme implementation
+    fn theme(&self) -> Theme {
+        Theme::custom(
+            "catppuccin-mocha-custom",
+            iced::theme::Palette {
+                background: CATPPUCCIN_MOCHA.base.into(),
+                text: CATPPUCCIN_MOCHA.text.into(),
+                primary: self.mode.color(),
+                success: CATPPUCCIN_MOCHA.green.into(),
+                warning: CATPPUCCIN_MOCHA.yellow.into(),
+                danger: CATPPUCCIN_MOCHA.red.into()
+            }
+        )
+    }
+
+    fn button<'a>(icon: Icon) -> Button<'a, Message> {
+        let content = widget::text(icon.unicode())
+            .font(Font::with_name("lucide"))
+            .shaping(text::Shaping::Advanced);
+        button(content)
+    }
 }
