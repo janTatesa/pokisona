@@ -13,7 +13,9 @@ iced = { version = "0.14", features = [
   "wayland",
   "image",
   "smol",
-  "advanced"
+  "advanced",
+  "highlighter",
+  "markdown"
 ], default-features = false }
 serde = { version = "1.0.228", features = ["derive"] }
 clap = { version = "4.5.48", features = ["cargo", "derive"] }
@@ -29,3 +31,4 @@ chumsky = "0.12.0"
 catppuccin = { git = "https://github.com/janTatesa/catppuccin-rust", features = ["iced"]}
 strum = { version = "0.27.2", features = ["derive"] }
 sweeten = { git = "https://github.com/airstrike/sweeten", branch = "0.14.0" }
+iced_highlighter = "0.14.0"

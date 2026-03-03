@@ -50,6 +50,10 @@ fn universal(key: Key<&str>, modifiers: Modifiers) -> Option<Binding<Message>> {
         (K::Named(N::End), M::NONE) => B::Move(Motion::End),
         (K::Named(N::Home), M::SHIFT) => B::Select(Motion::Home),
         (K::Named(N::End), M::SHIFT) => B::Select(Motion::End),
+        (K::Named(N::ArrowLeft), M::NONE) => B::Move(Motion::Left),
+        (K::Named(N::ArrowRight), M::NONE) => B::Move(Motion::Right),
+        (K::Named(N::ArrowUp), M::NONE) => B::Move(Motion::Up),
+        (K::Named(N::ArrowDown), M::NONE) => B::Move(Motion::Down),
         (K::Named(N::ArrowLeft), M::SHIFT) => B::Select(Motion::Left),
         (K::Named(N::ArrowRight), M::SHIFT) => B::Select(Motion::Right),
         (K::Named(N::ArrowUp), M::SHIFT) => B::Select(Motion::Up),
@@ -76,15 +80,14 @@ fn normal(key: KeyPress) -> Option<Binding<Message>> {
     use Binding as B;
     use Key as K;
     use Modifiers as M;
-    use Named as N;
     let binding = match (key.as_ref(), modifiers) {
         (K::Character(";"), M::SHIFT) => B::Custom(Message::EnterCommandMode),
         (K::Character("i"), M::NONE) => B::Custom(Message::SwitchMode(Mode::Insert)),
         (K::Character("v"), M::NONE) => B::Custom(Message::SwitchMode(Mode::Select)),
-        (K::Character("h") | K::Named(N::ArrowLeft), M::NONE) => B::Move(Motion::Left),
-        (K::Character("j") | K::Named(N::ArrowDown), M::NONE) => B::Move(Motion::Down),
-        (K::Character("k") | K::Named(N::ArrowUp), M::NONE) => B::Move(Motion::Up),
-        (K::Character("l") | K::Named(N::ArrowRight), M::NONE) => B::Move(Motion::Right),
+        (K::Character("h"), M::NONE) => B::Move(Motion::Left),
+        (K::Character("j"), M::NONE) => B::Move(Motion::Down),
+        (K::Character("k"), M::NONE) => B::Move(Motion::Up),
+        (K::Character("l"), M::NONE) => B::Move(Motion::Right),
         (K::Character("d"), M::NONE) => B::Delete,
         (K::Character("w"), M::NONE) => B::Move(Motion::WordLeft),
         (K::Character("b"), M::NONE) => B::Move(Motion::WordRight),
@@ -99,7 +102,7 @@ fn normal(key: KeyPress) -> Option<Binding<Message>> {
 }
 
 fn insert(key: KeyPress) -> Option<Binding<Message>> {
-    if key.status == text_editor::Status::Active {
+    if !matches!(key.status, text_editor::Status::Focused { .. }) {
         return None;
     }
 

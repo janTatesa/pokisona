@@ -64,6 +64,7 @@ enum Message {
 }
 
 type PathBuf = Utf8PathBuf;
+#[allow(dead_code)]
 type Path = Utf8Path;
 
 fn main() -> color_eyre::Result<()> {
@@ -275,7 +276,7 @@ impl Pokisona {
             && !parent.exists()
         {
             if force {
-                fs::create_dir(&parent)?;
+                fs::create_dir(parent)?;
             } else {
                 return Err(Error::WriteParentDirectoryDoesntExist);
             }
@@ -297,13 +298,20 @@ impl Pokisona {
                 value: CATPPUCCIN_MOCHA.text.into(),
                 selection: self.mode.color().scale_alpha(Self::HIGHLIGHT_SCALE_ALPHA)
             })
+            .id("editor")
+            .highlight(
+                self.file
+                    .as_ref()
+                    .and_then(|file| file.path.extension())
+                    .unwrap_or("md"),
+                iced_highlighter::Theme::Base16Mocha
+            )
             .on_action(Message::EditorAction)
             .width(Self::TEXT_EDITOR_LINE_WIDTH)
             .wrapping(Wrapping::WordOrGlyph)
             .key_binding(self.mode.bindings())
             .padding(Self::PADDING)
-            .height(Length::Fill)
-            .id("editor");
+            .height(Length::Fill);
         let editor = container(editor).center_x(Length::Fill);
 
         let mode = container(self.mode.as_ref())
@@ -322,7 +330,7 @@ impl Pokisona {
                         ..Default::default()
                     },
                     button::Status::Hovered => button::Style {
-                        text_color: self.mode.color().into(),
+                        text_color: self.mode.color(),
                         ..Default::default()
                     },
                     button::Status::Pressed => button::Style {
@@ -358,7 +366,7 @@ impl Pokisona {
 
         let bottom_bar: Option<Element<'_>> = match &self.bottom_bar {
             BottomBar::Command(command) => Some(
-                sweeten::widget::text_input("Enter command", &command)
+                sweeten::widget::text_input("Enter command", command)
                     .on_blur(Message::ExitCommandMode)
                     .on_input(Message::EditCommand)
                     .on_submit(Message::SubmitCommand)
