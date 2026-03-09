@@ -1,7 +1,6 @@
-use std::{
-    iter::Enumerate,
-    str::{Chars, FromStr}
-};
+use std::str::FromStr;
+
+use chumsky::{prelude::*, text::whitespace};
 
 use crate::PathBuf;
 
@@ -20,47 +19,69 @@ pub enum Command {
     ForceMove(PathBuf)
 }
 
-struct CommandArgsParser<'a> {
-    str: &'a str,
-    inner: Enumerate<Chars<'a>>
+fn escape<'a>() -> impl Parser<'a, &'a str, char> {
+    just('\\').ignore_then(any()).boxed()
 }
 
-// TODO: use chumsky
-impl<'a> Iterator for CommandArgsParser<'a> {
-    type Item = &'a str;
+fn ident<'a>() -> impl Parser<'a, &'a str, &'a str> {
+    any()
+        .filter(|c: &char| c.is_ascii_alphabetic() || *c == '-')
+        .repeated()
+        .at_least(1)
+        .to_slice()
+}
 
-    fn next(&mut self) -> Option<Self::Item> {
-        let (mut start_idx, char) = self.inner.next()?;
-        let inner = &mut self.inner;
-        let end_idx = match char {
-            '\'' if start_idx != 0
-                && self.str.len() > start_idx + 1
-                && self.str[(start_idx + 1)..].contains('\'') =>
-            {
-                start_idx += 1;
-                inner
-                    .take_while(|(_, char)| *char != '\'' && !char.is_whitespace())
-                    .last()?
-                    .0
-            }
-            '"' if start_idx != 0
-                && self.str.len() > start_idx + 1
-                && self.str[(start_idx + 1)..].contains('"') =>
-            {
-                start_idx += 1;
-                inner
-                    .take_while(|(_, char)| *char != '"' && !char.is_whitespace())
-                    .last()?
-                    .0
-            }
-            _ => inner
-                .take_while(|(_, char)| !char.is_whitespace())
-                .last()
-                .map(|(num, _)| num)
-                .unwrap_or(start_idx)
-        };
+// TODO: maybe this could be simplified
+fn args_parser<'a>() -> impl Parser<'a, &'a str, (&'a str, Vec<String>)> {
+    ident()
+        .then(
+            whitespace()
+                .ignore_then(choice((
+                    none_of("\\\"")
+                        .or(escape())
+                        .repeated()
+                        .collect()
+                        .delimited_by(just('"'), just('"'))
+                        .boxed(),
+                    none_of("\\\'")
+                        .or(escape())
+                        .repeated()
+                        .collect()
+                        .delimited_by(just('\''), just('\''))
+                        .boxed(),
+                    any()
+                        .filter(|c: &char| !c.is_ascii_whitespace())
+                        .repeated()
+                        .at_least(1)
+                        .to_slice()
+                        .map(ToString::to_string)
+                        .boxed()
+                )))
+                .repeated()
+                .at_least(1)
+                .collect::<Vec<_>>()
+                .then_ignore(whitespace())
+                .boxed()
+        )
+        .or(ident()
+            .then_ignore(whitespace())
+            .map(|ident| (ident, vec![])))
+}
 
-        Some(&self.str[start_idx..=end_idx])
+#[cfg(test)]
+mod tests {
+    use chumsky::Parser;
+
+    use crate::command::args_parser;
+
+    #[test]
+    fn test_parse_command() {
+        let parsed = args_parser().parse("foo-bar 'baz\\'' baz  ");
+        dbg!(parsed.errors().collect::<Vec<_>>());
+        assert_eq!(
+            parsed.into_output().unwrap(),
+            ("foo-bar", vec!["baz'".to_string(), "baz".to_string()])
+        );
     }
 }
 
@@ -68,19 +89,20 @@ impl<'a> Iterator for CommandArgsParser<'a> {
 pub enum CommandParseErr {
     TooManyArgs,
     NotEnoughArgs,
-    UnknownCommand
+    CannotParse,
+    Unknown
 }
 
 impl FromStr for Command {
     type Err = CommandParseErr;
 
     fn from_str(str: &str) -> Result<Self, Self::Err> {
-        let mut args = CommandArgsParser {
-            str,
-            inner: str.chars().enumerate()
-        };
-        let command_name = args.next().ok_or(CommandParseErr::NotEnoughArgs)?;
-        let command = match command_name {
+        let (name, args) = args_parser()
+            .parse(str)
+            .into_output()
+            .ok_or(CommandParseErr::CannotParse)?;
+        let mut args = args.into_iter();
+        let command = match name {
             "q" | "quit" => Command::Quit,
             "q!" | "quit!" => Command::ForceQuit,
             "w" | "write" => Command::Write(args.next().map(PathBuf::from)),
@@ -98,7 +120,7 @@ impl FromStr for Command {
             "mv!" | "move!" => {
                 Command::ForceMove(args.next().ok_or(CommandParseErr::NotEnoughArgs)?.into())
             }
-            _ => return Err(CommandParseErr::UnknownCommand)
+            _ => return Err(CommandParseErr::Unknown)
         };
 
         if args.next().is_some() {

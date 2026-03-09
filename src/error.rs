@@ -20,7 +20,8 @@ impl Display for Error {
             Error::Command(command_parse_err) => match command_parse_err {
                 CommandParseErr::TooManyArgs => f.write_str("Too many arguments"),
                 CommandParseErr::NotEnoughArgs => f.write_str("Not enough arguments"),
-                CommandParseErr::UnknownCommand => f.write_str("Unknown command")
+                CommandParseErr::Unknown => f.write_str("Unknown command"),
+                CommandParseErr::CannotParse => f.write_str("Cannot parse command")
             },
             Error::IO(error_kind) => write!(f, "IO error: {error_kind}"),
             Error::CannotQuitWithUnsavedBuffer => {

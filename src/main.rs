@@ -2,6 +2,7 @@
 mod cli;
 mod command;
 mod error;
+mod markdown;
 mod mode;
 
 use std::{fs, mem};
