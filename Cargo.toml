@@ -4,33 +4,21 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = { version = "0.14", features = [
-  "smol",
-  "wgpu",
-  "crisp",
-  # I personally don't use x11, make an issue if you do
-  # "x11",
-  "wayland",
-  "image",
-  "smol",
-  "advanced",
-  "highlighter",
-], default-features = false }
-serde = { version = "1.0.228", features = ["derive"] }
-clap = { version = "4.5.48", features = ["cargo", "derive"] }
-color-eyre = "0.6.5"
+iced = { version = "0.14", features = ["advanced", "smol"] }
 dirs = "6.0.0"
 bitflags = "2.10.0"
-open = "5.3.2"
-camino = "1.2.1"
 itertools = "0.14.0"
-lucide-icons = { version = "*" }
-isahc = "1.7.2"
-catppuccin = { git = "https://github.com/janTatesa/catppuccin-rust", features = ["iced"]}
+lucide-icons = { version = "*", features = ["iced"] }
 strum = { version = "0.27.2", features = ["derive"] }
-sweeten = { git = "https://github.com/airstrike/sweeten", branch = "0.14.0" }
 iced_highlighter = "0.14.0"
-chumsky = "0.12.0"
-smol_str = "0.3.6"
-iced_core = { version = "0.14.0", features = ["crisp"] }
-ropey = "1.6.1"
+chumsky = { version = "0.12.0", features = ["lexical-numbers"] }
+jiff = { version = "0.2.34", features = ["serde"] }
+anyhow = "1.0.103"
+rand = "0.10.2"
+clap = { version = "4.6.4", features = ["cargo", "derive"] }
+postcard = { version = "1.1.3", default-features = false, features = ["alloc"] }
+serde = { version = "1.0.229", features = ["derive"] }
+log = "0.4.33"
+env_logger = "0.11.11"
+fuzzy-search = "0.1.0"
+strsim = "0.11.1"

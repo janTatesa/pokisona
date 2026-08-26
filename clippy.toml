@@ -1,4 +1,0 @@
-disallowed-types = [
-  { path = "std::path::PathBuf", reason = "You can hardly see non utf-8 paths nowadays", replacement = "crate::PathBuf" },
-  { path = "std::path::Path", reason = "You can hardly see non utf-8 paths nowadays", replacement = "crate::Path" },
-]
