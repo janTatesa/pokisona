@@ -2202,6 +2202,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "norm"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ed5725a3379c44dc0adf3437af87cf21c10df473ed858d654b12603dea102508"
+dependencies = [
+ "memchr",
+]
+
+[[package]]
 name = "num-conv"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2793,10 +2802,10 @@ dependencies = [
  "jiff",
  "log",
  "lucide-icons",
+ "norm",
  "postcard",
  "rand",
  "serde",
- "strsim",
  "strum",
 ]
 

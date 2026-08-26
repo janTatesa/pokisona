@@ -24,6 +24,7 @@ use crate::{
 impl Pokisona {
     const SPACING: f32 = 8.0;
     const IDEA_SIZE: f32 = 500.0;
+    const BASE_FONT_SIZE: f32 = 18.0;
     pub fn view(&self) -> Element<'_> {
         let content: Element = match &self.view {
             View::Title(markdown) => self.view_markdown(markdown).size(32.0).into(),
@@ -41,7 +42,6 @@ impl Pokisona {
                     value: theme.palette().text,
                     selection: theme.extended_palette().primary.base.color.scale_alpha(0.2)
                 })
-                .size(18.0)
                 .wrapping(Wrapping::WordOrGlyph)
                 .placeholder("Your idea...")
                 .width(Self::IDEA_SIZE)
@@ -55,14 +55,25 @@ impl Pokisona {
                 links,
                 backlinks
             } => column![
-                row(links
-                    .iter()
-                    .map(|(idea, markdown)| self.view_idea(*idea, markdown, false)))
+                row(links.iter().map(|(idea, markdown)| self.view_idea(
+                    *idea,
+                    markdown,
+                    ViewIdeaOptions::default()
+                )))
                 .align_y(Alignment::End),
-                self.view_idea(*idea, parsed, true),
-                row(backlinks
-                    .iter()
-                    .map(|(idea, markdown)| self.view_idea(*idea, markdown, false))),
+                self.view_idea(
+                    *idea,
+                    parsed,
+                    ViewIdeaOptions {
+                        enlarged: true,
+                        highlighted: true
+                    }
+                ),
+                row(backlinks.iter().map(|(idea, markdown)| self.view_idea(
+                    *idea,
+                    markdown,
+                    ViewIdeaOptions::default()
+                ))),
             ]
             .spacing(Self::SPACING)
             .into()
@@ -101,7 +112,7 @@ impl Pokisona {
                 .on_press(Message::ClosePicker)
             )),
             self.picker.as_ref().map(|picker| opaque(
-                center(
+                container(
                     container(
                         column![
                             text_input("Enter query", &picker.query)
@@ -117,7 +128,10 @@ impl Pokisona {
                             |(i, (idea, markdown))| self.view_idea(
                                 *idea,
                                 markdown,
-                                picker.selected == Some(i)
+                                ViewIdeaOptions {
+                                    enlarged: false,
+                                    highlighted: picker.selected == Some(i)
+                                }
                             )
                         ))
                         .align_x(Alignment::Center)
@@ -127,6 +141,7 @@ impl Pokisona {
                     .center_x(Self::IDEA_SIZE * 2.0)
                     .style(container::bordered_box)
                 )
+                .center_x(Length::Fill)
                 .padding(Self::SPACING)
             ))
         ]
@@ -137,9 +152,13 @@ impl Pokisona {
         &'a self,
         idea: IdeaRef,
         markdown: &'a Markdown,
-        current: bool
+        options: ViewIdeaOptions
     ) -> Element<'a> {
-        let size = if current { 32.0 } else { 16.0 };
+        let size = if options.enlarged {
+            Self::BASE_FONT_SIZE * 1.5
+        } else {
+            Self::BASE_FONT_SIZE
+        };
         let markdown = self
             .view_markdown(markdown)
             .on_link_click(Message::Open)
@@ -154,7 +173,7 @@ impl Pokisona {
         ))
         .style(move |theme: &Theme| container::Style {
             background: Some(theme.extended_palette().background.weakest.color.into()),
-            border: border::color(if current {
+            border: border::color(if options.highlighted {
                 theme.palette().primary
             } else {
                 theme.extended_palette().secondary.base.color
@@ -231,4 +250,10 @@ impl Pokisona {
             .skip(1);
         Rich::from_iter(spans)
     }
+}
+
+#[derive(Default, Clone, Copy)]
+struct ViewIdeaOptions {
+    enlarged: bool,
+    highlighted: bool
 }

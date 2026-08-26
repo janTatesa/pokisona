@@ -1,4 +1,4 @@
-use std::{fs, time::Duration};
+use std::fs;
 
 use iced::{
     clipboard,
@@ -6,6 +6,10 @@ use iced::{
     widget::{operation::focus, text_editor::Content}
 };
 use log::error;
+use norm::{
+    Metric,
+    fzf::{FzfParser, FzfV2}
+};
 use rand::seq::IndexedRandom;
 
 use crate::{Message, Picker, Pokisona, Task, View, cache::IdeaRef, markdown::Markdown};
@@ -62,7 +66,7 @@ impl Pokisona {
                 } else {
                     None
                 };
-                let mut max_duration = Duration::ZERO;
+
                 let files: Vec<_> = self
                     .cache
                     .iter()
@@ -72,7 +76,6 @@ impl Pokisona {
                         }
 
                         let duration = meta.last_accessed.elapsed().ok()?;
-                        max_duration = max_duration.max(duration);
                         Some((*idea, duration))
                     })
                     .collect();
@@ -82,9 +85,7 @@ impl Pokisona {
                 }
 
                 let idea = files
-                    .choose_weighted(&mut rand::rng(), |(_, accessed)| {
-                        1 + (max_duration - *accessed).as_secs()
-                    })?
+                    .choose_weighted(&mut rand::rng(), |(_, accessed)| accessed.as_secs())?
                     .0;
                 return self.try_update(Message::Open(idea));
             }
@@ -105,17 +106,23 @@ impl Pokisona {
                 };
 
                 *query = new_query;
+                let mut fzf = FzfV2::new();
+                let mut parser = FzfParser::new();
+                let query = parser.parse(query);
                 let mut weights: Vec<_> = self
                     .cache
                     .keys()
-                    .map(|idea| {
-                        (
+                    .filter_map(|idea| {
+                        Some((
                             *idea,
-                            strsim::jaro(&fs::read_to_string(format!("{idea}.md")).unwrap(), query)
-                        )
+                            fzf.distance(
+                                query,
+                                &fs::read_to_string(format!("{idea}.md")).unwrap()
+                            )?
+                        ))
                     })
                     .collect();
-                weights.sort_by(|a, b| a.1.total_cmp(&b.1).reverse());
+                weights.sort_by_key(|(_, distance)| *distance);
                 *top_entries = weights
                     .into_iter()
                     .take(Picker::MAX_ENTRIES)
