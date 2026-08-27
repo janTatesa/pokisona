@@ -24,7 +24,7 @@ use crate::{
 impl Pokisona {
     const SPACING: f32 = 8.0;
     const IDEA_SIZE: f32 = 500.0;
-    const BASE_FONT_SIZE: f32 = 18.0;
+    pub const BASE_FONT_SIZE: f32 = 18.0;
     pub fn view(&self) -> Element<'_> {
         let content: Element = match &self.view {
             View::Title(markdown) => self.view_markdown(markdown).size(32.0).into(),

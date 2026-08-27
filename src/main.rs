@@ -141,6 +141,10 @@ fn main() -> anyhow::Result<()> {
 
     iced::application(boot, Pokisona::update, Pokisona::view)
         .font(LUCIDE_FONT_BYTES)
+        .settings(iced::Settings {
+            default_text_size: Pokisona::BASE_FONT_SIZE.into(),
+            ..Default::default()
+        })
         .subscription(Pokisona::subscription)
         .run()?;
     Ok(())

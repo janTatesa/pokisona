@@ -16,28 +16,27 @@ use crate::{Message, Picker, Pokisona, Task, View, cache::IdeaRef, markdown::Mar
 
 impl Pokisona {
     pub fn update(&mut self, msg: Message) -> Task {
-        let task = match self.try_update(msg) {
+        match self.try_update(msg) {
             Err(error) => {
                 error!("{error}");
                 self.error = Some(error.to_string());
                 Task::none()
             }
             Ok(task) => task
-        };
-
-        if self.picker.is_some() {
-            focus("picker_query")
-        } else {
-            focus("editor")
         }
-        .chain(task)
     }
 
     fn try_update(&mut self, msg: Message) -> anyhow::Result<Task> {
         self.error = None;
 
         match msg {
-            Message::Refocus => {}
+            Message::Refocus => {
+                return Ok(if self.picker.is_some() {
+                    focus("picker_query")
+                } else {
+                    focus("editor")
+                });
+            }
             Message::Editor(action) => {
                 let View::NewIdea { content, .. } = &mut self.view else {
                     unreachable!()
