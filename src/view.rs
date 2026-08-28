@@ -81,13 +81,11 @@ impl Pokisona {
 
         let buttons = row![
             button(icon_file_plus()).on_press(Message::NewIdea),
-            rule::vertical(1.0),
             button(icon_link()).on_press_maybe(if let View::Revisiting { idea, .. } = self.view {
                 Some(Message::CopyLink(idea))
             } else {
                 None
             }),
-            rule::vertical(1.0),
             button(icon_file_search()).on_press(Message::OpenPicker),
             button(icon_dice_3()).on_press(Message::RevisitRandom)
         ]

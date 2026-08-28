@@ -88,7 +88,10 @@ impl Pokisona {
                     .0;
                 return self.try_update(Message::Open(idea));
             }
-            Message::OpenPicker => self.picker = Some(Picker::default()),
+            Message::OpenPicker => {
+                self.picker = Some(Picker::default());
+                return Ok(focus("picker_query"));
+            }
             Message::NewIdea => {
                 self.view = View::NewIdea {
                     content: Content::new()
