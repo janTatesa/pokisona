@@ -92,7 +92,9 @@ impl Pokisona {
             Message::NewIdea => {
                 self.view = View::NewIdea {
                     content: Content::new()
-                }
+                };
+
+                return Ok(focus("editor"));
             }
             Message::PickerQuery(new_query) => {
                 let Some(Picker {
