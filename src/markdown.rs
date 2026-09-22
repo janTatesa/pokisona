@@ -26,19 +26,6 @@ impl Markdown {
         Self(output)
     }
 
-    pub fn links(&self) -> impl Iterator<Item = IdeaRef> {
-        self.lines()
-            .iter()
-            .flat_map(|line| &line.spans)
-            .filter_map(|span| {
-                let MarkdownSpan::Link { target, .. } = &span else {
-                    return None;
-                };
-
-                Some(*target)
-            })
-    }
-
     pub fn lines(&self) -> &[MarkdownLine] {
         &self.0
     }
@@ -96,7 +83,15 @@ impl MarkdownLine {
                         ParsingContext::UNDERSCORE
                     ),
                     // HACK: find a better way to do this
-                    link.map(|link| vec![link])
+                    link.map(|link| vec![link]),
+                    just("#")
+                        .ignore_then(none_of(" \r\n").repeated().at_least(1).map_with(
+                            |(), extra| {
+                                let slice: &str = extra.slice();
+                                vec![MarkdownSpan::Tag(slice.to_string())]
+                            }
+                        ))
+                        .boxed()
                 ))
                 .boxed();
                 let text = choice((non_text.clone().ignored(), newline()))
@@ -220,6 +215,7 @@ pub enum ListItem {
 pub enum MarkdownSpan {
     ModifierDelimeter(&'static str),
     Text(String, Modifiers),
+    Tag(String),
     Link {
         display: Option<String>,
         target: IdeaRef,

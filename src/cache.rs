@@ -1,14 +1,14 @@
 use std::{
-    collections::{BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     env,
     fmt::{Debug, Display, Formatter},
     fs::{self, File},
     io::{self, Write},
-    ops::Deref,
     str::FromStr,
     time::SystemTime
 };
 
+use catppuccin::PALETTE;
 use chumsky::container::Container;
 use jiff::{
     Zoned,
@@ -17,20 +17,19 @@ use jiff::{
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
 
-use crate::markdown::Markdown;
+use crate::markdown::{Markdown, MarkdownSpan};
 
 #[derive(Serialize, Deserialize)]
 pub struct Cache {
-    ideas: HashMap<IdeaRef, CacheEntry>,
+    ideas: BTreeMap<IdeaRef, IdeaCache>,
+    tags: HashMap<String, TagCache>,
     last_modified: SystemTime
 }
 
-impl Deref for Cache {
-    type Target = HashMap<IdeaRef, CacheEntry>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.ideas
-    }
+#[derive(Serialize, Deserialize)]
+pub struct TagCache {
+    pub ideas: BTreeSet<IdeaRef>,
+    pub color: catppuccin::ColorName
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
@@ -66,9 +65,10 @@ impl Display for IdeaRef {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct CacheEntry {
+pub struct IdeaCache {
     pub links: BTreeSet<IdeaRef>,
     pub backlinks: BTreeSet<IdeaRef>,
+    pub tags: BTreeSet<String>,
     pub last_accessed: SystemTime
 }
 
@@ -94,39 +94,32 @@ impl Cache {
     }
 
     pub fn new() -> anyhow::Result<Self> {
-        let ideas = fs::read_dir(env::current_dir()?)?.filter_map(|entry| {
-            let file = match entry {
-                Ok(file) => file,
-                Err(file) => {
-                    // TODO: this isnt displayed in the app
-                    error!("Error reading dir entry: {file}");
-                    return None;
-                }
-            };
+        let ideas: BTreeSet<_> = fs::read_dir(env::current_dir()?)?
+            .filter_map(|entry| {
+                let file = match entry {
+                    Ok(file) => file,
+                    Err(file) => {
+                        // TODO: this isnt displayed in the app
+                        error!("Error reading dir entry: {file}");
+                        return None;
+                    }
+                };
 
-            let idea = IdeaRef::from_str(file.file_name().to_str()?.strip_suffix(".md")?).ok()?;
-            let accessed = file.metadata().ok()?.accessed().ok()?;
-            Some((idea, accessed))
-        });
+                let idea =
+                    IdeaRef::from_str(file.file_name().to_str()?.strip_suffix(".md")?).ok()?;
+                let accessed = file.metadata().ok()?.accessed().ok()?;
+                Some((idea, accessed))
+            })
+            .collect();
 
         let mut this = Cache {
-            ideas: HashMap::new(),
-            last_modified: SystemTime::now()
+            ideas: BTreeMap::new(),
+            last_modified: SystemTime::now(),
+            tags: HashMap::new()
         };
-        for (idea, creation) in ideas {
-            let links = Markdown::new(&fs::read_to_string(format!("{idea}.md"))?)
-                .links()
-                .filter_map(|link| {
-                    this.ideas.get_mut(&link)?.backlinks.push(idea);
-                    Some(link)
-                })
-                .collect();
-            let entry = CacheEntry {
-                links,
-                backlinks: BTreeSet::new(),
-                last_accessed: creation
-            };
-            this.ideas.insert(idea, entry);
+        for (idea, accessed) in ideas {
+            let markdown = Markdown::new(&fs::read_to_string(format!("{idea}.md"))?);
+            this.insert(idea, &markdown, accessed);
         }
 
         this.save()?;
@@ -150,28 +143,60 @@ impl Cache {
             second: now.second()
         };
 
-        let links = markdown
-            .links()
-            .filter_map(|link| {
-                self.ideas.get_mut(&link)?.backlinks.push(idea);
-                Some(link)
-            })
-            .collect();
-
         let mut file = File::create(format!("{idea}.md"))?;
         file.write_all(contents.as_bytes())?;
         let mut permissions = file.metadata()?.permissions();
         permissions.set_readonly(true);
         file.set_permissions(permissions)?;
 
-        let entry = CacheEntry {
-            links,
-            backlinks: BTreeSet::new(),
-            last_accessed: SystemTime::now()
-        };
-        self.ideas.insert(idea, entry);
+        self.insert(idea, markdown, now.timestamp().into());
         self.save()?;
 
         Ok(idea)
+    }
+
+    fn insert(&mut self, idea: IdeaRef, markdown: &Markdown, last_accessed: SystemTime) {
+        let mut links = BTreeSet::new();
+        let mut tags = BTreeSet::new();
+        for span in markdown.lines().iter().flat_map(|line| &line.spans) {
+            match span {
+                MarkdownSpan::Link { target, .. } => {
+                    let Some(refered_note) = self.ideas.get_mut(target) else {
+                        continue;
+                    };
+                    refered_note.backlinks.push(idea);
+                    links.push(*target);
+                }
+                MarkdownSpan::Tag(tag) => {
+                    let len = self.tags.len();
+                    self.tags
+                        .entry(tag.clone())
+                        .or_insert_with(|| TagCache {
+                            color: PALETTE.frappe.into_iter().nth(len % 12).unwrap().name,
+                            ideas: BTreeSet::new()
+                        })
+                        .ideas
+                        .push(idea);
+                    tags.insert(tag.clone());
+                }
+                _ => {}
+            }
+        }
+
+        let entry = IdeaCache {
+            links,
+            backlinks: BTreeSet::new(),
+            last_accessed,
+            tags
+        };
+        self.ideas.insert(idea, entry);
+    }
+
+    pub fn ideas(&self) -> &BTreeMap<IdeaRef, IdeaCache> {
+        &self.ideas
+    }
+
+    pub fn tags(&self) -> &HashMap<String, TagCache> {
+        &self.tags
     }
 }

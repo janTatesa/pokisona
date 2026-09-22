@@ -5,6 +5,7 @@
 
 mod cache;
 mod markdown;
+mod theme;
 mod update;
 mod view;
 
@@ -18,7 +19,7 @@ use std::{
 use anyhow::anyhow;
 use clap::Parser;
 use iced::{
-    Event, Subscription, Theme, event,
+    Event, Subscription, event,
     keyboard::{self, Key},
     widget::text_editor::{self}
 };
@@ -27,28 +28,31 @@ use lucide_icons::LUCIDE_FONT_BYTES;
 
 use crate::{
     cache::{Cache, IdeaRef},
-    markdown::Markdown
+    markdown::Markdown,
+    theme::CatppuccinFrappe
 };
 
 struct Pokisona {
     error: Option<String>,
     view: View,
     cache: Cache,
+    tag_filter: Option<String>,
     picker: Option<Picker>
 }
 
 #[derive(Debug)]
 enum View {
+    None,
     Title(Markdown),
     NewIdea {
         content: text_editor::Content
     },
-    Revisiting {
+    Idea {
         idea: IdeaRef,
         markdown: Markdown,
         links: Vec<(IdeaRef, Markdown)>,
         backlinks: Vec<(IdeaRef, Markdown)>
-    } // GraphView
+    }
 }
 
 impl Default for View {
@@ -57,18 +61,27 @@ impl Default for View {
     }
 }
 
-#[derive(Default)]
 struct Picker {
-    query: String,
-    top_entries: Vec<(IdeaRef, Markdown)>,
-    selected: Option<usize>
+    selected: Option<usize>,
+    kind: PickerKind
 }
 
 impl Picker {
-    const MAX_ENTRIES: usize = 5;
+    const MAX_IDEAS: usize = 5;
 }
 
-type Element<'a, M = Message> = iced::Element<'a, M>;
+#[derive(Clone, Debug)]
+enum PickerKind {
+    Idea {
+        query: String,
+        ideas: Vec<(IdeaRef, Markdown)>
+    },
+    Tag {
+        tags: Vec<String>
+    }
+}
+
+type Element<'a, M = Message> = iced::Element<'a, M, CatppuccinFrappe>;
 type Task<M = Message> = iced::Task<M>;
 
 #[derive(Clone, Debug)]
@@ -81,14 +94,20 @@ enum Message {
 
     KeyPress(Key, keyboard::Modifiers),
 
-    Open(IdeaRef),
-    RevisitRandom,
+    SetTagFilter(String),
+    UnsetTagFilter,
 
-    OpenPicker,
+    OpenIdea(IdeaRef),
+    OpenRandom,
+
+    OpenIdeaPicker,
+    OpenTagPicker,
     PickerQuery(String),
-    PickerNext,
-    ClosePicker,
-    PickerPrevious
+    PickDown,
+    PickUp,
+    PickLeft,
+    PickRight,
+    ClosePicker
 }
 
 #[derive(Parser)]
@@ -136,7 +155,8 @@ fn main() -> anyhow::Result<()> {
         error: None,
         view: View::default(),
         cache: cache_wrapped.take().unwrap(),
-        picker: None
+        picker: None,
+        tag_filter: None
     };
 
     iced::application(boot, Pokisona::update, Pokisona::view)
@@ -144,6 +164,7 @@ fn main() -> anyhow::Result<()> {
             default_text_size: Pokisona::BASE_FONT_SIZE.into(),
             ..Default::default()
         })
+        .theme(Pokisona::theme)
         .font(LUCIDE_FONT_BYTES)
         .subscription(Pokisona::subscription)
         .run()?;
@@ -158,11 +179,7 @@ impl Pokisona {
                 return Some(Message::Refocus);
             }
 
-            let Event::Keyboard(event) = event else {
-                return None;
-            };
-
-            let keyboard::Event::KeyPressed { key, modifiers, .. } = event else {
+            let Event::Keyboard(keyboard::Event::KeyPressed { key, modifiers, .. }) = event else {
                 return None;
             };
 
@@ -171,7 +188,7 @@ impl Pokisona {
     }
 
     #[expect(clippy::unused_self)]
-    fn theme(&self) -> Theme {
-        Theme::CatppuccinFrappe
+    fn theme(&self) -> CatppuccinFrappe {
+        CatppuccinFrappe
     }
 }
