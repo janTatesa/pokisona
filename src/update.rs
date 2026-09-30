@@ -124,6 +124,7 @@ impl Pokisona {
             Message::OpenTagPicker => {
                 let mut tags: Vec<_> = self.cache.tags().keys().cloned().collect();
                 tags.sort_by_key(|tag| self.cache.tags()[tag].ideas.last());
+                tags.reverse();
                 self.picker = Some(Picker {
                     selected: None,
                     kind: PickerKind::Tag { tags }
@@ -194,7 +195,7 @@ impl Pokisona {
                 picker.selected = picker.selected.and_then(|selected| selected.checked_sub(1));
             }
 
-            Message::PickLeft => {
+            Message::PickRight => {
                 if let Some(Picker {
                     kind: PickerKind::Tag { tags },
                     selected
@@ -204,7 +205,7 @@ impl Pokisona {
                         .min(tags.len().checked_sub(1));
                 }
             }
-            Message::PickRight => {
+            Message::PickLeft => {
                 if let Some(Picker {
                     kind: PickerKind::Tag { .. },
                     selected
@@ -242,7 +243,7 @@ impl Pokisona {
                     {
                         Message::PickLeft
                     }
-                    (Key::Named(keyboard::key::Named::ArrowDown), keyboard::Modifiers::NONE)
+                    (Key::Named(keyboard::key::Named::ArrowRight), keyboard::Modifiers::NONE)
                         if self.picker.is_some() =>
                     {
                         Message::PickRight

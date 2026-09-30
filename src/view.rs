@@ -153,7 +153,7 @@ impl Pokisona {
                 .spacing(Self::SPACING)
                 .align_x(Alignment::Center)
                 .into(),
-                PickerKind::Tag { tags } => grid(tags.iter().rev().enumerate().map(|(i, tag)| {
+                PickerKind::Tag { tags } => grid(tags.iter().enumerate().map(|(i, tag)| {
                     button(
                         container(text!(
                             "#{tag} ({} ideas)",
