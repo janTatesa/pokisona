@@ -4,6 +4,7 @@
 #![deny(clippy::all)]
 
 mod cache;
+mod history;
 mod markdown;
 mod theme;
 mod update;
@@ -28,13 +29,14 @@ use lucide_icons::LUCIDE_FONT_BYTES;
 
 use crate::{
     cache::{Cache, IdeaRef},
+    history::History,
     markdown::Markdown,
     theme::CatppuccinFrappe
 };
 
 struct Pokisona {
     error: Option<String>,
-    view: View,
+    history: History,
     cache: Cache,
     tag_filter: Option<String>,
     picker: Option<Picker>
@@ -42,7 +44,6 @@ struct Pokisona {
 
 #[derive(Debug)]
 enum View {
-    None,
     Title(Markdown),
     NewIdea {
         content: text_editor::Content
@@ -86,9 +87,10 @@ type Task<M = Message> = iced::Task<M>;
 
 #[derive(Clone, Debug)]
 enum Message {
-    NewIdea,
+    NewIdea { content: text_editor::Content },
     Editor(text_editor::Action),
     CopyLink(IdeaRef),
+    Reply(IdeaRef),
     Save,
     Refocus,
 
@@ -107,7 +109,10 @@ enum Message {
     PickUp,
     PickLeft,
     PickRight,
-    ClosePicker
+    ClosePicker,
+
+    HistoryForward,
+    HistoryBackward
 }
 
 #[derive(Parser)]
@@ -153,7 +158,7 @@ fn main() -> anyhow::Result<()> {
     let cache_wrapped = RefCell::new(Some(cache));
     let boot = move || Pokisona {
         error: None,
-        view: View::default(),
+        history: History::default(),
         cache: cache_wrapped.take().unwrap(),
         picker: None,
         tag_filter: None

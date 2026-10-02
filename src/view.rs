@@ -5,8 +5,9 @@ use iced::{
     font::{self, Family},
     widget::{
         self, button, center, column, container, grid, mouse_area, opaque, rich_text, row, rule,
-        scrollable, space, span, stack, text,
+        scrollable, space, span, stack,
         text::{Rich, Wrapping},
+        text_editor::Content,
         text_input, tooltip
     }
 };
@@ -26,7 +27,7 @@ impl Pokisona {
     const IDEA_SIZE: f32 = 500.0;
     pub const BASE_FONT_SIZE: f32 = 18.0;
     pub fn view(&self) -> Element<'_> {
-        let content: Element = match &self.view {
+        let content: Element = match self.history.current_view() {
             View::Title(markdown) => container(
                 container(self.view_markdown(markdown))
                     .width(Self::IDEA_SIZE)
@@ -79,14 +80,13 @@ impl Pokisona {
             ]
             .spacing(Self::SPACING)
             .align_x(Alignment::Center)
-            .into(),
-            View::None => center("Nothing is opened, open smth pwease").into()
+            .into()
         };
 
         #[allow(clippy::items_after_statements)]
-        fn top_button(icon: Icon, message: Message, tooltip: &str) -> Element<'_> {
+        fn top_button(icon: Icon, message: Option<Message>, tooltip: &str) -> Element<'_> {
             let content: widget::Button<'_, Message, CatppuccinFrappe> =
-                button(widget::Text::from(icon)).on_press(message);
+                button(widget::Text::from(icon)).on_press_maybe(message);
             widget::tooltip(
                 content,
                 container(tooltip)
@@ -98,34 +98,63 @@ impl Pokisona {
             .into()
         }
 
-        let buttons = row![
-            match &self.view {
-                View::NewIdea { .. } =>
-                    Some(top_button(Icon::Save, Message::NewIdea, "Save (Ctrl-s)")),
-                View::Idea { idea, .. } => Some(top_button(
+        let buttons = match self.history.current_view() {
+            View::NewIdea { .. } => {
+                row![
+                    top_button(Icon::Save, Some(Message::Save), "Save (Ctrl-s)"),
+                    rule::vertical(1.0)
+                ]
+            }
+            View::Idea { idea, .. } => row![
+                top_button(
                     Icon::Link,
-                    Message::CopyLink(*idea),
+                    Some(Message::CopyLink(*idea)),
                     "Copy link (Ctrl-c)"
-                )),
-                _ => None
-            },
-            top_button(Icon::FilePlus, Message::NewIdea, "New idea (Ctrl-n)"),
+                ),
+                top_button(Icon::Reply, Some(Message::Reply(*idea)), "Reply (Ctrl-p)"),
+                rule::vertical(1.0)
+            ],
+            View::Title(_) => row![]
+        }
+        .extend([
+            top_button(
+                Icon::FilePlus,
+                Some(Message::NewIdea {
+                    content: Content::new()
+                }),
+                "New idea (Ctrl-n)"
+            ),
             top_button(
                 Icon::FileSearch,
-                Message::OpenIdeaPicker,
+                Some(Message::OpenIdeaPicker),
                 "Open idea picker (Ctrl-f)"
             ),
             top_button(
                 Icon::Tags,
-                Message::OpenTagPicker,
+                Some(Message::OpenTagPicker),
                 "Open tag picker (Ctrl-t)"
             ),
             top_button(
                 Icon::Dice3,
-                Message::OpenRandom,
+                Some(Message::OpenRandom),
                 "Revisit a random idea (Ctrl-r)"
+            ),
+            rule::vertical(1.0).into(),
+            top_button(
+                Icon::ArrowLeft,
+                self.history
+                    .can_go_backward()
+                    .then_some(Message::HistoryBackward),
+                "Go back (Alt-left)"
+            ),
+            top_button(
+                Icon::ArrowRight,
+                self.history
+                    .can_go_forward()
+                    .then_some(Message::HistoryForward),
+                "Go forward (Alt-right)"
             )
-        ]
+        ])
         .height(Length::Shrink)
         .spacing(Self::SPACING);
         let buttons = container(buttons)
@@ -155,7 +184,7 @@ impl Pokisona {
                 .into(),
                 PickerKind::Tag { tags } => grid(tags.iter().enumerate().map(|(i, tag)| {
                     button(
-                        container(text!(
+                        container(widget::text!(
                             "#{tag} ({} ideas)",
                             self.cache.tags()[tag].ideas.len()
                         ))
@@ -201,7 +230,7 @@ impl Pokisona {
                 container(self.tag_filter.as_ref().map(|tag| {
                     row![
                         "Filtering by",
-                        container(text(tag)).padding(button::DEFAULT_PADDING).class(
+                        container(&**tag).padding(button::DEFAULT_PADDING).class(
                             ContainerClass::Tag {
                                 color: self.cache.tags()[tag].color
                             }
@@ -229,11 +258,7 @@ impl Pokisona {
         markdown: &'a Markdown,
         options: ViewIdeaOptions
     ) -> Element<'a> {
-        let size = if options.enlarged {
-            Self::BASE_FONT_SIZE * 1.5
-        } else {
-            Self::BASE_FONT_SIZE
-        };
+        let size = Self::BASE_FONT_SIZE * if options.enlarged { 1.5 } else { 1.0 };
         let text_span = |text: Cow<'a, str>, modifiers: Modifiers| {
             widget::span(text).font(Font {
                 weight: if modifiers.contains(Modifiers::BOLD) {

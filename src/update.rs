@@ -3,8 +3,11 @@ use std::fs;
 use either::Either;
 use iced::{
     clipboard,
-    keyboard::{self, Key},
-    widget::{operation::focus, text_editor::Content}
+    keyboard::{self, Key, key},
+    widget::{
+        operation::focus,
+        text_editor::{self, Content, Motion}
+    }
 };
 use log::error;
 use norm::{
@@ -41,29 +44,31 @@ impl Pokisona {
                 }));
             }
             Message::Editor(action) => {
-                let View::NewIdea { content, .. } = &mut self.view else {
+                let View::NewIdea { content, .. } = self.history.current_view_mut() else {
                     unreachable!()
                 };
 
                 content.perform(action);
             }
             Message::Save => {
-                let View::NewIdea { content } = &self.view else {
+                let View::NewIdea { content } = &self.history.current_view() else {
                     unreachable!()
                 };
 
                 let contents = content.text();
                 let markdown = Markdown::new(&contents);
                 let idea = self.cache.create(&contents, &markdown)?;
-                self.open_idea(idea, markdown)?;
+                let view = self.open_idea(idea, markdown)?;
+                *self.history.current_view_mut() = view;
             }
 
             Message::OpenIdea(idea) => {
                 let contents = self.cache.read_idea(idea)?;
-                self.open_idea(idea, Markdown::new(&contents))?;
+                let view = self.open_idea(idea, Markdown::new(&contents))?;
+                self.history.insert(view);
             }
             Message::OpenRandom => {
-                let current = if let View::Idea { idea, .. } = &self.view {
+                let current = if let View::Idea { idea, .. } = self.history.current_view() {
                     Some(*idea)
                 } else {
                     None
@@ -131,10 +136,8 @@ impl Pokisona {
                 });
             }
 
-            Message::NewIdea => {
-                self.view = View::NewIdea {
-                    content: Content::new()
-                };
+            Message::NewIdea { content } => {
+                self.history.insert(View::NewIdea { content });
 
                 return Ok(focus("editor"));
             }
@@ -217,48 +220,50 @@ impl Pokisona {
 
             Message::KeyPress(key, modifiers) => {
                 return Ok(Task::done(match (key.as_ref(), modifiers) {
-                    (Key::Character("n"), keyboard::Modifiers::CTRL) => Message::NewIdea,
+                    (Key::Character("n"), keyboard::Modifiers::CTRL) => Message::NewIdea {
+                        content: Content::new()
+                    },
                     (Key::Character("f"), keyboard::Modifiers::CTRL) => Message::OpenIdeaPicker,
                     (Key::Character("r"), keyboard::Modifiers::CTRL) => Message::OpenRandom,
                     (Key::Character("s"), keyboard::Modifiers::CTRL) => Message::Save,
                     (Key::Character("c"), keyboard::Modifiers::CTRL)
-                        if let View::Idea { idea, .. } = self.view
+                        if let View::Idea { idea, .. } = self.history.current_view()
                             && self.picker.is_none() =>
                     {
-                        Message::CopyLink(idea)
+                        Message::CopyLink(*idea)
                     }
                     (Key::Character("t"), keyboard::Modifiers::CTRL) => Message::OpenTagPicker,
-                    (Key::Named(keyboard::key::Named::ArrowUp), keyboard::Modifiers::NONE)
+                    (Key::Named(key::Named::ArrowUp), keyboard::Modifiers::NONE)
                         if self.picker.is_some() =>
                     {
                         Message::PickUp
                     }
-                    (Key::Named(keyboard::key::Named::ArrowDown), keyboard::Modifiers::NONE)
+                    (Key::Named(key::Named::ArrowDown), keyboard::Modifiers::NONE)
                         if self.picker.is_some() =>
                     {
                         Message::PickDown
                     }
-                    (Key::Named(keyboard::key::Named::ArrowLeft), keyboard::Modifiers::NONE)
+                    (Key::Named(key::Named::ArrowLeft), keyboard::Modifiers::NONE)
                         if self.picker.is_some() =>
                     {
                         Message::PickLeft
                     }
-                    (Key::Named(keyboard::key::Named::ArrowRight), keyboard::Modifiers::NONE)
+                    (Key::Named(key::Named::ArrowRight), keyboard::Modifiers::NONE)
                         if self.picker.is_some() =>
                     {
                         Message::PickRight
                     }
-                    (Key::Named(keyboard::key::Named::Escape), keyboard::Modifiers::NONE)
+                    (Key::Named(key::Named::Escape), keyboard::Modifiers::NONE)
                         if self.picker.is_some() =>
                     {
                         Message::ClosePicker
                     }
-                    (Key::Named(keyboard::key::Named::Escape), keyboard::Modifiers::NONE)
+                    (Key::Named(key::Named::Escape), keyboard::Modifiers::NONE)
                         if self.tag_filter.is_some() =>
                     {
                         Message::UnsetTagFilter
                     }
-                    (Key::Named(keyboard::key::Named::Enter), keyboard::Modifiers::NONE)
+                    (Key::Named(key::Named::Enter), keyboard::Modifiers::NONE)
                         if let Some(Picker {
                             selected: Some(selected),
                             kind: PickerKind::Idea { ideas, .. }
@@ -266,13 +271,24 @@ impl Pokisona {
                     {
                         Message::OpenIdea(ideas[*selected].0)
                     }
-                    (Key::Named(keyboard::key::Named::Enter), keyboard::Modifiers::NONE)
+                    (Key::Named(key::Named::Enter), keyboard::Modifiers::NONE)
                         if let Some(Picker {
                             selected: Some(selected),
                             kind: PickerKind::Tag { tags }
                         }) = &self.picker =>
                     {
                         Message::SetTagFilter(tags[*selected].clone())
+                    }
+                    (Key::Named(key::Named::ArrowLeft), keyboard::Modifiers::ALT) => {
+                        Message::HistoryBackward
+                    }
+                    (Key::Named(key::Named::ArrowRight), keyboard::Modifiers::ALT) => {
+                        Message::HistoryForward
+                    }
+                    (Key::Character("p"), keyboard::Modifiers::CTRL)
+                        if let View::Idea { idea, .. } = self.history.current_view() =>
+                    {
+                        Message::Reply(*idea)
                     }
 
                     _ => return Ok(Task::none())
@@ -285,21 +301,28 @@ impl Pokisona {
             Message::SetTagFilter(tag) => {
                 self.picker = None;
 
-                if let View::Idea { idea, .. } = &self.view
-                    && !self.cache.ideas()[idea].tags.contains(&tag)
-                {
-                    self.view = View::None;
-                }
-
                 self.tag_filter = Some(tag);
             }
-            Message::UnsetTagFilter => self.tag_filter = None
+            Message::UnsetTagFilter => self.tag_filter = None,
+            Message::HistoryForward => {
+                self.picker = None;
+                self.history.forward();
+            }
+            Message::HistoryBackward => {
+                self.picker = None;
+                self.history.backward();
+            }
+            Message::Reply(idea) => {
+                let mut content = Content::with_text(&format!("[[{idea}]] "));
+                content.perform(text_editor::Action::Move(Motion::End));
+                return Ok(Task::done(Message::NewIdea { content }));
+            }
         }
 
         Ok(Task::none())
     }
 
-    fn open_idea(&mut self, idea: IdeaRef, markdown: Markdown) -> anyhow::Result<()> {
+    fn open_idea(&mut self, idea: IdeaRef, markdown: Markdown) -> anyhow::Result<View> {
         let mut links = Vec::new();
         for link in &self.cache.ideas()[&idea].links {
             let content = fs::read_to_string(format!("{link}.md"))?;
@@ -314,14 +337,11 @@ impl Pokisona {
             backlinks.push((*backlink, markdown));
         }
 
-        self.view = View::Idea {
+        Ok(View::Idea {
             idea,
             markdown,
             links,
             backlinks
-        };
-        self.picker = None;
-
-        Ok(())
+        })
     }
 }
