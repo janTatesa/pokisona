@@ -3,8 +3,8 @@ It is sadly pretty immature, though stuff like graph view and highlighting are p
 
 The core principles are:
 1. **Minimalism** - intentionally few features
-2. **Permanence** - once a note is saved, it cannot be modified
-3. **Atomicity** - the interface favors brief notes
+2. **Permanence** - once a idea is saved, it cannot be modified
+3. **Atomicity** - the interface favors brief ideas
 
 If you don't like it, pokisona is not for you
 And also yea it uses a serif font

@@ -161,10 +161,10 @@ impl Cache {
         for span in markdown.lines().iter().flat_map(|line| &line.spans) {
             match span {
                 MarkdownSpan::Link { target, .. } => {
-                    let Some(refered_note) = self.ideas.get_mut(target) else {
+                    let Some(refered_idea) = self.ideas.get_mut(target) else {
                         continue;
                     };
-                    refered_note.backlinks.push(idea);
+                    refered_idea.backlinks.push(idea);
                     links.push(*target);
                 }
                 MarkdownSpan::Tag(tag) => {

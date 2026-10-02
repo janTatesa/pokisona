@@ -39,7 +39,7 @@ impl Pokisona {
             View::NewIdea { content, .. } => widget::text_editor(content)
                 .on_action(Message::Editor)
                 .font(Font {
-                    family: Family::Serif,
+                    family: Family::Name("Libron"),
                     ..Default::default()
                 })
                 .wrapping(Wrapping::WordOrGlyph)
@@ -246,7 +246,7 @@ impl Pokisona {
                 } else {
                     font::Style::Normal
                 },
-                family: Family::Serif,
+                family: Family::Name("Libron"),
                 ..Default::default()
             })
         };
@@ -343,7 +343,7 @@ impl Pokisona {
                 } else {
                     font::Style::Normal
                 },
-                family: Family::Serif,
+                family: Family::Name("Libron"),
                 ..Default::default()
             })
         };

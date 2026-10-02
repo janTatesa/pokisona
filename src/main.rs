@@ -166,6 +166,7 @@ fn main() -> anyhow::Result<()> {
         })
         .theme(Pokisona::theme)
         .font(LUCIDE_FONT_BYTES)
+        .font(include_bytes!("../Libron_Regular.ttf"))
         .subscription(Pokisona::subscription)
         .run()?;
     Ok(())
