@@ -153,6 +153,13 @@ impl Pokisona {
                     .can_go_forward()
                     .then_some(Message::HistoryForward),
                 "Go forward (Alt-right)"
+            ),
+            top_button(
+                Icon::CircleX,
+                self.history
+                    .can_close_current()
+                    .then_some(Message::HistoryClose),
+                "Close (Ctrl-w)"
             )
         ])
         .height(Length::Shrink)

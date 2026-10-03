@@ -112,7 +112,8 @@ enum Message {
     ClosePicker,
 
     HistoryForward,
-    HistoryBackward
+    HistoryBackward,
+    HistoryClose
 }
 
 #[derive(Parser)]

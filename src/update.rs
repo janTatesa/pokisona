@@ -291,7 +291,7 @@ impl Pokisona {
                     {
                         Message::Reply(*idea)
                     }
-
+                    (Key::Character("w"), keyboard::Modifiers::CTRL) => Message::HistoryClose,
                     _ => return Ok(Task::none())
                 }));
             }
@@ -313,6 +313,11 @@ impl Pokisona {
             Message::HistoryBackward => {
                 self.picker = None;
                 self.history.backward();
+                return Ok(Task::done(Message::Refocus));
+            }
+            Message::HistoryClose => {
+                self.picker = None;
+                self.history.close_current();
                 return Ok(Task::done(Message::Refocus));
             }
             Message::Reply(idea) => {

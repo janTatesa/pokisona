@@ -17,6 +17,17 @@ impl Default for History {
 }
 
 impl History {
+    pub fn close_current(&mut self) {
+        if self.views.len() != 1 {
+            self.views.remove(self.idx);
+            self.idx -= 1;
+        }
+    }
+
+    pub fn can_close_current(&self) -> bool {
+        self.views.len() != 1
+    }
+
     pub fn current_view(&self) -> &View {
         &self.views[self.idx]
     }
