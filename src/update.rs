@@ -63,6 +63,7 @@ impl Pokisona {
             }
 
             Message::OpenIdea(idea) => {
+                self.picker = None;
                 let contents = self.cache.read_idea(idea)?;
                 let view = self.open_idea(idea, Markdown::new(&contents))?;
                 self.history.insert(view);
@@ -307,10 +308,12 @@ impl Pokisona {
             Message::HistoryForward => {
                 self.picker = None;
                 self.history.forward();
+                return Ok(Task::done(Message::Refocus));
             }
             Message::HistoryBackward => {
                 self.picker = None;
                 self.history.backward();
+                return Ok(Task::done(Message::Refocus));
             }
             Message::Reply(idea) => {
                 let mut content = Content::with_text(&format!("[[{idea}]] "));
