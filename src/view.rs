@@ -98,7 +98,33 @@ impl Pokisona {
             .into()
         }
 
-        let buttons = match self.history.current_view() {
+        let top_left_buttons = row![
+            top_button(
+                Icon::CircleX,
+                self.history
+                    .can_close_current()
+                    .then_some(Message::HistoryClose),
+                "Close (Ctrl-w)"
+            ),
+            rule::vertical(1.0),
+            top_button(
+                Icon::ArrowLeft,
+                self.history
+                    .can_go_backward()
+                    .then_some(Message::HistoryBackward),
+                "Go back (Alt-left)"
+            ),
+            top_button(
+                Icon::ArrowRight,
+                self.history
+                    .can_go_forward()
+                    .then_some(Message::HistoryForward),
+                "Go forward (Alt-right)"
+            ),
+        ]
+        .spacing(Self::SPACING);
+
+        let top_right_buttons = match self.history.current_view() {
             View::NewIdea { .. } => {
                 row![
                     top_button(Icon::Save, Some(Message::Save), "Save (Ctrl-s)"),
@@ -138,40 +164,21 @@ impl Pokisona {
                 Icon::Dice3,
                 Some(Message::OpenRandom),
                 "Revisit a random idea (Ctrl-r)"
-            ),
-            rule::vertical(1.0).into(),
-            top_button(
-                Icon::ArrowLeft,
-                self.history
-                    .can_go_backward()
-                    .then_some(Message::HistoryBackward),
-                "Go back (Alt-left)"
-            ),
-            top_button(
-                Icon::ArrowRight,
-                self.history
-                    .can_go_forward()
-                    .then_some(Message::HistoryForward),
-                "Go forward (Alt-right)"
-            ),
-            top_button(
-                Icon::CircleX,
-                self.history
-                    .can_close_current()
-                    .then_some(Message::HistoryClose),
-                "Close (Ctrl-w)"
             )
         ])
         .height(Length::Shrink)
         .spacing(Self::SPACING);
-        let buttons = container(buttons)
+        let top_right_buttons = container(top_right_buttons)
             .align_right(Length::Fill)
             .padding(Self::SPACING);
         let error = self
             .error
             .as_ref()
             .map(|error| widget::text(error).class(TextClass::Danger));
-
+        let top_left = row![top_left_buttons, error]
+            .spacing(Self::SPACING)
+            .padding(Self::SPACING)
+            .align_y(Alignment::Center);
         let picker = self.picker.as_ref().map(|picker| {
             let content: Element<'_> = match &picker.kind {
                 PickerKind::Idea { query, ideas } => column![
@@ -233,7 +240,7 @@ impl Pokisona {
         stack![
             center(content).class(ContainerClass::Base),
             stack![
-                container(buttons).align_right(Length::Fill),
+                top_right_buttons,
                 container(self.tag_filter.as_ref().map(|tag| {
                     row![
                         "Filtering by",
@@ -251,7 +258,7 @@ impl Pokisona {
                 }))
                 .padding(Self::SPACING)
                 .center_x(Length::Fill),
-                error,
+                top_left,
             ],
             overlay,
             picker
