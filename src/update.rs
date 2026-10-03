@@ -301,8 +301,8 @@ impl Pokisona {
             }
             Message::SetTagFilter(tag) => {
                 self.picker = None;
-
                 self.tag_filter = Some(tag);
+                return Ok(Task::done(Message::OpenRandom));
             }
             Message::UnsetTagFilter => self.tag_filter = None,
             Message::HistoryForward => {
