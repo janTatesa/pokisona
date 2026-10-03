@@ -3,11 +3,16 @@ use std::{borrow::Cow, iter};
 use iced::{
     Alignment, Font, Length, border,
     font::{self, Family},
+    keyboard::{
+        self,
+        Key::{self},
+        key
+    },
     widget::{
         self, button, center, column, container, grid, mouse_area, opaque, rich_text, row, rule,
         scrollable, space, span, stack,
         text::{Rich, Wrapping},
-        text_editor::Content,
+        text_editor::{Binding, Content, Motion},
         text_input, tooltip
     }
 };
@@ -42,6 +47,27 @@ impl Pokisona {
                 .font(Font {
                     family: Family::Name("Libron"),
                     ..Default::default()
+                })
+                .key_binding(|press| match press.key {
+                    Key::Named(key::Named::Escape) => None,
+                    // TODO: Delete this after update to iced 0.15
+                    Key::Named(key::Named::Backspace)
+                        if press.modifiers == keyboard::Modifiers::CTRL =>
+                    {
+                        Some(Binding::Sequence(vec![
+                            Binding::Select(Motion::WordLeft),
+                            Binding::Backspace,
+                        ]))
+                    }
+                    Key::Named(key::Named::Delete)
+                        if press.modifiers == keyboard::Modifiers::CTRL =>
+                    {
+                        Some(Binding::Sequence(vec![
+                            Binding::Select(Motion::WordRight),
+                            Binding::Delete,
+                        ]))
+                    }
+                    _ => Binding::from_key_press(press)
                 })
                 .wrapping(Wrapping::WordOrGlyph)
                 .placeholder("Your idea...")
