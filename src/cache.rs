@@ -9,7 +9,6 @@ use std::{
 };
 
 use catppuccin::PALETTE;
-use chumsky::container::Container;
 use jiff::{
     Zoned,
     civil::{Date, DateTime}
@@ -164,8 +163,8 @@ impl Cache {
                     let Some(refered_idea) = self.ideas.get_mut(target) else {
                         continue;
                     };
-                    refered_idea.backlinks.push(idea);
-                    links.push(*target);
+                    refered_idea.backlinks.insert(idea);
+                    links.insert(*target);
                 }
                 MarkdownSpan::Tag(tag) => {
                     let len = self.tags.len();
@@ -176,7 +175,7 @@ impl Cache {
                             ideas: BTreeSet::new()
                         })
                         .ideas
-                        .push(idea);
+                        .insert(idea);
                     tags.insert(tag.clone());
                 }
                 _ => {}
