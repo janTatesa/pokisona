@@ -1,7 +1,17 @@
-use std::{borrow::Cow, iter, sync::LazyLock};
+use core::slice;
+use std::{
+    borrow::Cow,
+    iter::{self, Cloned},
+    ops::Range,
+    rc::Rc,
+    sync::LazyLock,
+    vec
+};
 
 use iced::{
-    Alignment, Font, Length, border,
+    Alignment, Font, Length,
+    advanced::text::highlighter,
+    border,
     font::{self, Family},
     keyboard::{
         self,
@@ -11,7 +21,7 @@ use iced::{
     widget::{
         self, button, center, column, container, grid, mouse_area, opaque, rich_text, row, rule,
         scrollable, space, span, stack,
-        text::{Rich, Wrapping},
+        text::{Highlighter, Rich, Wrapping},
         text_editor::{Binding, Content, Motion},
         text_input, tooltip
     }
@@ -21,10 +31,11 @@ use lucide_icons::{Icon, iced::icon_x};
 use crate::{
     Element,
     Message::{self},
-    PickerKind, Pokisona, View,
+    Pokisona,
     cache::IdeaRef,
-    markdown::{self, Markdown, MarkdownSpan, Modifiers},
-    theme::{ButtonClass, CATPPUCCIN, CatppuccinFrappe, ContainerClass, TextClass}
+    markdown::{self, Highlighted, Markdown, MarkdownSpan, Modifiers},
+    theme::{ButtonClass, CATPPUCCIN, CatppuccinFrappe, ContainerClass, TextClass},
+    view_manager::{PickerKind, View}
 };
 
 static TITLE: LazyLock<Markdown> = LazyLock::new(|| Markdown::new(include_str!("../README.md")));
@@ -34,7 +45,7 @@ pub const BASE_FONT_SIZE: f32 = 18.0;
 
 impl Pokisona {
     pub fn view(&self) -> Element<'_> {
-        let content: Element = match self.history.current_view() {
+        let content: Element = match &*self.view_manager {
             View::Title => container(
                 container(self.view_markdown(&TITLE))
                     .width(IDEA_SIZE)
@@ -44,7 +55,11 @@ impl Pokisona {
             .padding(SPACING * 2.0)
             .into(),
             // TODO: add highlighting
-            View::NewIdea { content, .. } => widget::text_editor(content)
+            View::Editor {
+                content,
+                highlighted,
+                ..
+            } => widget::text_editor(content)
                 .on_action(Message::Editor)
                 .font(Font {
                     family: Family::Name("Libron"),
@@ -77,32 +92,40 @@ impl Pokisona {
                 .height(IDEA_SIZE / 2.0)
                 .padding(SPACING)
                 .id("editor")
+                .highlight_with::<MarkdownHighlighter>(highlighted.clone(), |highlight, _| {
+                    *highlight
+                })
                 .into(),
             View::Idea {
                 idea,
-                markdown: parsed,
-                links,
-                backlinks
+                current_ideas
             } => column![
-                row(links.iter().map(|(idea, markdown)| {
-                    self.view_idea(Some(*idea), markdown, ViewIdeaOptions::default())
+                row(self.cache.ideas()[idea].links.iter().map(|idea| {
+                    self.view_idea(
+                        Some(*idea),
+                        &current_ideas[idea],
+                        ViewIdeaOptions::default()
+                    )
                 }))
                 .spacing(SPACING)
                 .align_y(Alignment::End)
                 .height(Length::Fill),
                 self.view_idea(
                     Some(*idea),
-                    parsed,
+                    &current_ideas[idea],
                     ViewIdeaOptions {
                         enlarged: true,
                         highlighted: true
                     }
                 ),
-                row(backlinks.iter().map(|(idea, markdown)| self.view_idea(
-                    Some(*idea),
-                    markdown,
-                    ViewIdeaOptions::default()
-                )))
+                row(self.cache.ideas()[idea]
+                    .backlinks
+                    .iter()
+                    .map(|idea| self.view_idea(
+                        Some(*idea),
+                        &current_ideas[idea],
+                        ViewIdeaOptions::default()
+                    )))
                 .spacing(SPACING)
                 .height(Length::Fill),
             ]
@@ -129,7 +152,7 @@ impl Pokisona {
         let top_left_buttons = row![
             top_button(
                 Icon::CircleX,
-                self.history
+                self.view_manager
                     .can_close_current()
                     .then_some(Message::HistoryClose),
                 "Close (Ctrl-w)"
@@ -137,14 +160,14 @@ impl Pokisona {
             rule::vertical(1.0),
             top_button(
                 Icon::ArrowLeft,
-                self.history
+                self.view_manager
                     .can_go_backward()
                     .then_some(Message::HistoryBackward),
                 "Go back (Alt-left)"
             ),
             top_button(
                 Icon::ArrowRight,
-                self.history
+                self.view_manager
                     .can_go_forward()
                     .then_some(Message::HistoryForward),
                 "Go forward (Alt-right)"
@@ -152,23 +175,13 @@ impl Pokisona {
         ]
         .spacing(SPACING);
 
-        let top_right_buttons = match self.history.current_view() {
-            View::NewIdea { .. } => {
-                row![
-                    top_button(Icon::Save, Some(Message::Save), "Save (Ctrl-s)"),
-                    rule::vertical(1.0)
-                ]
-            }
-            View::Idea { idea, .. } => row![
-                top_button(
-                    Icon::Link,
-                    Some(Message::CopyLink(*idea)),
-                    "Copy link (Ctrl-c)"
-                ),
-                top_button(Icon::Reply, Some(Message::Reply(*idea)), "Reply (Ctrl-p)"),
+        let top_right_buttons = if let View::Editor { .. } = &*self.view_manager {
+            row![
+                top_button(Icon::Save, Some(Message::Save), "Save (Ctrl-s)"),
                 rule::vertical(1.0)
-            ],
-            View::Title => row![]
+            ]
+        } else {
+            row![]
         }
         .extend([
             top_button(
@@ -207,7 +220,7 @@ impl Pokisona {
             .spacing(SPACING)
             .padding(SPACING)
             .align_y(Alignment::Center);
-        let picker = self.picker.as_ref().map(|picker| {
+        let picker = self.view_manager.picker.as_ref().map(|picker| {
             let content: Element<'_> = match &picker.kind {
                 PickerKind::Idea { query, ideas } => column![
                     text_input("Enter query", query)
@@ -255,7 +268,7 @@ impl Pokisona {
             .padding(SPACING)
         });
 
-        let overlay = self.picker.is_some().then(|| {
+        let overlay = self.view_manager.picker.is_some().then(|| {
             opaque(
                 mouse_area(
                     container(space())
@@ -322,7 +335,7 @@ impl Pokisona {
             .iter()
             .flat_map(|line| {
                 iter::once(span('\n'))
-                    .chain(line.list_item.map(|item| {
+                    .chain(line.list_item.map(|(_, item)| {
                         match item {
                             markdown::ListItem::Bullet => {
                                 text_span(" • ".into(), Modifiers::ITALIC)
@@ -333,7 +346,7 @@ impl Pokisona {
                         }
                         .color(CATPPUCCIN.blue)
                     }))
-                    .chain(line.spans.iter().map(|span| {
+                    .chain(line.spans.iter().map(|(_, span)| {
                         match span {
                             MarkdownSpan::Text(span, modifiers) => {
                                 let color =
@@ -354,7 +367,7 @@ impl Pokisona {
                             )
                             .color(CATPPUCCIN.blue)
                             .link(Link::Idea(*target)),
-                            MarkdownSpan::ModifierDelimeter(_) => "".into(),
+                            MarkdownSpan::ModifierDelimeter => "".into(),
                             MarkdownSpan::Tag(tag) => widget::span(format!("#{tag}"))
                                 .background(CATPPUCCIN[self.cache.tags()[tag].color])
                                 .link(Link::Tag(tag.clone()))
@@ -420,7 +433,7 @@ impl Pokisona {
             .iter()
             .flat_map(|line| {
                 iter::once(span('\n'))
-                    .chain(line.list_item.map(|item| {
+                    .chain(line.list_item.map(|(_, item)| {
                         match item {
                             markdown::ListItem::Bullet => {
                                 text_span(" • ".into(), Modifiers::ITALIC)
@@ -431,7 +444,7 @@ impl Pokisona {
                         }
                         .color(CATPPUCCIN.blue)
                     }))
-                    .chain(line.spans.iter().map(|span| {
+                    .chain(line.spans.iter().map(|(_, span)| {
                         match span {
                             MarkdownSpan::Text(span, modifiers) => {
                                 let color =
@@ -452,7 +465,7 @@ impl Pokisona {
                             )
                             .color(CATPPUCCIN.blue)
                             .link(Link::Idea(*target)),
-                            MarkdownSpan::ModifierDelimeter(_) => "".into(),
+                            MarkdownSpan::ModifierDelimeter => "".into(),
                             MarkdownSpan::Tag(tag) => widget::span(format!("#{tag}"))
                                 .background(CATPPUCCIN[self.cache.tags()[tag].color])
                                 .link(Link::Tag(tag.clone()))
@@ -476,4 +489,44 @@ enum Link {
 struct ViewIdeaOptions {
     enlarged: bool,
     highlighted: bool
+}
+
+struct MarkdownHighlighter {
+    current_line: usize,
+    highlighted: Rc<Highlighted>
+}
+
+impl Highlighter for MarkdownHighlighter {
+    type Settings = Rc<Highlighted>;
+
+    type Highlight = highlighter::Format<Font>;
+
+    type Iterator<'a>
+        = Cloned<slice::Iter<'a, (Range<usize>, Self::Highlight)>>
+    where
+        Self: 'a;
+
+    fn new(highlighted: &Self::Settings) -> Self {
+        Self {
+            current_line: 0,
+            highlighted: highlighted.clone()
+        }
+    }
+
+    fn update(&mut self, highlighted: &Self::Settings) {
+        self.highlighted = highlighted.clone();
+    }
+
+    fn change_line(&mut self, line: usize) {
+        self.current_line = line;
+    }
+
+    fn highlight_line(&mut self, _line: &str) -> Self::Iterator<'_> {
+        self.current_line += 1;
+        self.highlighted.0[self.current_line - 1].iter().cloned()
+    }
+
+    fn current_line(&self) -> usize {
+        self.current_line
+    }
 }

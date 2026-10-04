@@ -1,4 +1,4 @@
-use std::{borrow::Cow, str::FromStr};
+use std::{ops::Range, str::FromStr};
 
 use bitflags::bitflags;
 use chumsky::{
@@ -7,11 +7,19 @@ use chumsky::{
     prelude::*,
     text::newline
 };
+use iced::{
+    Font,
+    advanced::text::highlighter,
+    font::{self, Family, Stretch, Weight}
+};
 use serde::{Deserialize, Serialize};
 
-use crate::cache::IdeaRef;
+use crate::{
+    cache::{Cache, IdeaRef},
+    theme::CATPPUCCIN
+};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Markdown(Vec<MarkdownLine>);
 
 impl Markdown {
@@ -32,16 +40,16 @@ impl Markdown {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct MarkdownLine {
-    pub list_item: Option<ListItem>,
-    pub spans: Vec<MarkdownSpan>
+    pub list_item: Option<(SimpleSpan, ListItem)>,
+    pub spans: Vec<(SimpleSpan, MarkdownSpan)>
 }
 
+type Extra = Full<EmptyErr, SimpleState<Modifiers>, ParsingContext>;
+
 impl MarkdownLine {
-    pub fn parser<'a>()
-    -> impl Parser<'a, &'a str, MarkdownLine, Full<EmptyErr, SimpleState<Modifiers>, ParsingContext>>
-    {
+    pub fn parser<'a>() -> impl Parser<'a, &'a str, MarkdownLine, Extra> {
         let link = link();
         list_item_start()
             .or_not()
@@ -86,12 +94,11 @@ impl MarkdownLine {
                     // HACK: find a better way to do this
                     link.map(|link| vec![link]),
                     just("#")
-                        .ignore_then(none_of(" \r\n").repeated().at_least(1).map_with(
-                            |(), extra| {
-                                let slice: &str = extra.slice();
-                                vec![MarkdownSpan::Tag(slice.to_string())]
-                            }
-                        ))
+                        .ignore_then(none_of(" \r\n").repeated().at_least(1))
+                        .map_with(|(), extra| {
+                            let slice: &str = extra.slice();
+                            vec![(extra.span(), MarkdownSpan::Tag(slice[1..].to_string()))]
+                        })
                         .boxed()
                 ))
                 .boxed();
@@ -125,18 +132,20 @@ impl MarkdownLine {
                         MarkdownSpan::Text(slice.to_string(), extra.state().0)
                     })
                     .boxed();
-                choice((non_text, text.map(|text| vec![text])))
-                    .repeated()
-                    .collect()
-                    .map(|spans: Vec<Vec<MarkdownSpan>>| spans.into_iter().flatten().collect())
+                choice((
+                    non_text,
+                    text.map_with(|text, ctx| vec![(ctx.span(), text)])
+                ))
+                .repeated()
+                .collect()
+                .map(|spans: Vec<Vec<_>>| spans.into_iter().flatten().collect())
             }))
             .boxed()
             .map(|(list_item, spans)| MarkdownLine { list_item, spans })
     }
 }
 
-fn link<'a>()
--> Boxed<'a, 'a, &'a str, MarkdownSpan, Full<EmptyErr, SimpleState<Modifiers>, ParsingContext>> {
+fn link<'a>() -> Boxed<'a, 'a, &'a str, (SimpleSpan, MarkdownSpan), Extra> {
     choice((just("]]"), just("|")))
         .not()
         .then_ignore(any())
@@ -159,46 +168,44 @@ fn link<'a>()
                 .boxed()
         )
         .delimited_by(just("[["), just("]]"))
-        .map_with(
-            |(target, display),
-             extra: &mut MapExtra<'_, '_, _, Full<_, SimpleState<Modifiers>, _>>| {
-                MarkdownSpan::Link {
-                    display,
-                    target,
-                    modifiers: extra.state().0
-                }
-            }
-        )
+        .map_with(|(target, display), ctx: &mut MapExtra<'_, '_, _, Extra>| {
+            let markdown_span = MarkdownSpan::Link {
+                display,
+                target,
+                modifiers: ctx.state().0
+            };
+            (ctx.span(), markdown_span)
+        })
         .boxed()
 }
 
-fn list_item_start<'a>()
--> Boxed<'a, 'a, &'a str, ListItem, Full<EmptyErr, SimpleState<Modifiers>, ParsingContext>> {
+fn list_item_start<'a>() -> Boxed<'a, 'a, &'a str, (SimpleSpan, ListItem), Extra> {
     choice((
-        choice((just("- "), just("-"))).map(|_| ListItem::Bullet),
+        choice((just("- "), just("-"))).map_with(|_, ctx| (ctx.span(), ListItem::Bullet)),
         chumsky::text::digits(10)
             .try_map_with(|(), extra| u32::from_str(extra.slice()).map_err(|_| EmptyErr::default()))
             .then_ignore(choice((just("."), just(". "))))
-            .map(ListItem::Number)
+            .map_with(|number, ctx| (ctx.span(), ListItem::Number(number)))
     ))
     .boxed()
 }
 
 fn modifier_span<'a>(
-    markdown: impl Parser<
-        'a,
-        &'a str,
-        Vec<MarkdownSpan>,
-        Full<EmptyErr, SimpleState<Modifiers>, ParsingContext>
-    > + 'a,
+    markdown: impl Parser<'a, &'a str, Vec<(SimpleSpan, MarkdownSpan)>, Extra> + 'a,
     delimeter: &'static str,
     modifiers: Modifiers,
     context: ParsingContext
-) -> impl Parser<'a, &'a str, Vec<MarkdownSpan>, Full<EmptyErr, SimpleState<Modifiers>, ParsingContext>>
-{
-    let delimeter = just(delimeter).map(move |_| MarkdownSpan::ModifierDelimeter(delimeter.into()));
-    map_ctx(move |ctx| *ctx | context, markdown)
-        .delimited_by(delimeter, delimeter)
+) -> impl Parser<'a, &'a str, Vec<(SimpleSpan, MarkdownSpan)>, Extra> {
+    let delimeter =
+        just(delimeter).map_with(move |_, ctx| (ctx.span(), MarkdownSpan::ModifierDelimeter));
+    delimeter
+        .then(map_ctx(move |ctx| *ctx | context, markdown))
+        .then(delimeter)
+        .map(|((start, mut contents), end)| {
+            contents.insert(0, start);
+            contents.push(end);
+            contents
+        })
         .contextual()
         .configure(move |_, ctx: &ParsingContext| !ctx.contains(context))
         .with_state(SimpleState(modifiers))
@@ -211,9 +218,9 @@ pub enum ListItem {
     Number(u32)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum MarkdownSpan {
-    ModifierDelimeter(Cow<'static, str>),
+    ModifierDelimeter,
     Text(String, Modifiers),
     Tag(String),
     Link {
@@ -238,5 +245,91 @@ bitflags! {
         const NONE = 0;
         const ASTERISK = 1 << 0;
         const UNDERSCORE = 1 << 1;
+    }
+}
+
+#[derive(Debug)]
+pub struct Highlighted(pub Vec<Vec<(Range<usize>, highlighter::Format<Font>)>>);
+impl Eq for Highlighted {}
+impl PartialEq for Highlighted {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+impl Highlighted {
+    pub fn new(markdown: &Markdown, cache: &Cache) -> Self {
+        Self(
+            markdown
+                .0
+                .iter()
+                .map(|line| {
+                    line.list_item
+                        .map(|(range, _)| {
+                            let format = highlighter::Format {
+                                color: Some(CATPPUCCIN.blue.into()),
+                                font: None
+                            };
+                            (range.into_range(), format)
+                        })
+                        .into_iter()
+                        .chain(line.spans.iter().map(|(range, span)| {
+                            let format = match span {
+                                MarkdownSpan::ModifierDelimeter => highlighter::Format {
+                                    color: Some(CATPPUCCIN.overlay0.into()),
+                                    font: None
+                                },
+                                MarkdownSpan::Text(_, modifiers) => highlighter::Format {
+                                    color: (*modifiers != Modifiers::NONE)
+                                        .then_some(CATPPUCCIN.blue.into()),
+                                    font: Some(Font {
+                                        family: Family::Name("Libron"),
+                                        weight: if modifiers.contains(Modifiers::BOLD) {
+                                            Weight::Bold
+                                        } else {
+                                            Weight::Normal
+                                        },
+                                        stretch: Stretch::Normal,
+                                        style: if modifiers.contains(Modifiers::ITALIC) {
+                                            font::Style::Italic
+                                        } else {
+                                            font::Style::Normal
+                                        }
+                                    })
+                                },
+
+                                MarkdownSpan::Tag(tag) => {
+                                    let color = cache
+                                        .tags()
+                                        .get(tag)
+                                        .map_or(cache.next_tag_color(), |tag| tag.color);
+                                    highlighter::Format {
+                                        color: Some(CATPPUCCIN[color].into()),
+                                        font: None
+                                    }
+                                }
+                                MarkdownSpan::Link { modifiers, .. } => highlighter::Format {
+                                    color: Some(CATPPUCCIN.blue.into()),
+                                    font: Some(Font {
+                                        family: Family::Name("Libron"),
+                                        weight: if modifiers.contains(Modifiers::BOLD) {
+                                            Weight::Bold
+                                        } else {
+                                            Weight::Normal
+                                        },
+                                        stretch: Stretch::Normal,
+                                        style: if modifiers.contains(Modifiers::ITALIC) {
+                                            font::Style::Italic
+                                        } else {
+                                            font::Style::Normal
+                                        }
+                                    })
+                                }
+                            };
+                            (range.into_range(), format)
+                        }))
+                        .collect()
+                })
+                .collect()
+        )
     }
 }

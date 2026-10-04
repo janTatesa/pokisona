@@ -10,7 +10,7 @@ bitflags = { version = "2.10.0", features = ["serde"] }
 itertools = "0.15.0"
 lucide-icons = { version = "*", features = ["iced"] }
 strum = { version = "0.28.0", features = ["derive"] }
-chumsky = { version = "0.13.0", features = ["lexical-numbers"] }
+chumsky = { version = "0.13.0", features = ["lexical-numbers", "serde"] }
 jiff = { version = "0.2.34", features = ["serde"] }
 anyhow = "1.0.103"
 rand = "0.10.2"

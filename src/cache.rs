@@ -4,13 +4,14 @@ use std::{
     fmt::{Debug, Display, Formatter},
     fs::{self, File},
     io::{self, Write},
+    iter,
     path::PathBuf,
     str::FromStr,
     sync::LazyLock,
     time::SystemTime
 };
 
-use catppuccin::PALETTE;
+use catppuccin::{ColorName, PALETTE};
 use jiff::{
     Zoned,
     civil::{Date, DateTime}
@@ -27,7 +28,7 @@ pub struct Cache {
     last_modified: SystemTime
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TagCache {
     pub ideas: BTreeSet<IdeaRef>,
     pub color: catppuccin::ColorName
@@ -65,7 +66,7 @@ impl Display for IdeaRef {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Debug)]
 pub struct IdeaCache {
     pub links: BTreeSet<IdeaRef>,
     pub backlinks: BTreeSet<IdeaRef>,
@@ -77,7 +78,7 @@ static PATH: LazyLock<PathBuf> =
     LazyLock::new(|| dirs::data_dir().unwrap().join("pokisona/cache.bin"));
 impl Cache {
     pub fn load() -> anyhow::Result<Self> {
-        let this: Self = postcard::from_bytes(&fs::read(&*PATH)?).unwrap();
+        let this: Self = postcard::from_bytes(&fs::read(&*PATH)?)?;
         if this.last_modified < fs::metadata(env::current_dir()?)?.modified()? {
             warn!("Vault has been modified by external process, rebuilding cache");
             Self::new()
@@ -92,6 +93,22 @@ impl Cache {
         self.ideas.get_mut(&idea).unwrap().last_accessed = fs::metadata(&path)?.accessed()?;
         self.save()?;
         Ok(contents)
+    }
+
+    pub fn read_relevant(&mut self, idea: IdeaRef) -> io::Result<HashMap<IdeaRef, Markdown>> {
+        let mut out = HashMap::new();
+        let cache = &self.ideas()[&idea];
+        let ideas: Vec<_> = iter::once(&idea)
+            .chain(&cache.links)
+            .chain(&cache.backlinks)
+            .copied()
+            .collect();
+        for idea in ideas {
+            let source = &self.read_idea(idea)?;
+            out.insert(idea, Markdown::new(source));
+        }
+
+        Ok(out)
     }
 
     pub fn new() -> anyhow::Result<Self> {
@@ -157,7 +174,7 @@ impl Cache {
     fn insert(&mut self, idea: IdeaRef, markdown: &Markdown, last_accessed: SystemTime) {
         let mut links = BTreeSet::new();
         let mut tags = BTreeSet::new();
-        for span in markdown.lines().iter().flat_map(|line| &line.spans) {
+        for (_, span) in markdown.lines().iter().flat_map(|line| &line.spans) {
             match span {
                 MarkdownSpan::Link { target, .. } => {
                     let Some(refered_idea) = self.ideas.get_mut(target) else {
@@ -167,13 +184,11 @@ impl Cache {
                     links.insert(*target);
                 }
                 MarkdownSpan::Tag(tag) => {
-                    let len = self.tags.len();
+                    let color = self.next_tag_color();
+                    let ideas = BTreeSet::new();
                     self.tags
                         .entry(tag.clone())
-                        .or_insert_with(|| TagCache {
-                            color: PALETTE.frappe.into_iter().nth(len % 12).unwrap().name,
-                            ideas: BTreeSet::new()
-                        })
+                        .or_insert(TagCache { ideas, color })
                         .ideas
                         .insert(idea);
                     tags.insert(tag.clone());
@@ -189,6 +204,11 @@ impl Cache {
             tags
         };
         self.ideas.insert(idea, entry);
+    }
+
+    pub fn next_tag_color(&self) -> ColorName {
+        let n = self.tags.len() % 12;
+        PALETTE.frappe.into_iter().nth(n).unwrap().name
     }
 
     pub fn ideas(&self) -> &BTreeMap<IdeaRef, IdeaCache> {

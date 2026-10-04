@@ -4,90 +4,37 @@
 #![deny(clippy::all)]
 
 mod cache;
-mod history;
 mod markdown;
 mod theme;
 mod update;
 mod view;
+mod view_manager;
 
 use std::{cell::RefCell, env};
 
 use iced::{
     Event, Subscription, event,
     keyboard::{self, Key},
-    widget::text_editor::{self, Motion}
+    widget::{
+        operation::focus,
+        text_editor::{self}
+    }
 };
-use log::warn;
+use log::error;
 use lucide_icons::LUCIDE_FONT_BYTES;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     cache::{Cache, IdeaRef},
-    history::History,
-    markdown::Markdown,
     theme::CatppuccinFrappe,
-    view::BASE_FONT_SIZE
+    view::BASE_FONT_SIZE,
+    view_manager::ViewManager
 };
 
 struct Pokisona {
     error: Option<String>,
-    history: History,
+    view_manager: ViewManager,
     cache: Cache,
-    tag_filter: Option<String>,
-    picker: Option<Picker>
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-enum View {
-    Title,
-    NewIdea {
-        #[serde(
-            serialize_with = "serialize_content",
-            deserialize_with = "deserialize_content"
-        )]
-        content: text_editor::Content
-    },
-    Idea {
-        idea: IdeaRef,
-        markdown: Markdown,
-        links: Vec<(IdeaRef, Markdown)>,
-        backlinks: Vec<(IdeaRef, Markdown)>
-    }
-}
-
-fn serialize_content<S: Serializer>(
-    content: &text_editor::Content,
-    serializer: S
-) -> Result<S::Ok, S::Error> {
-    content.text().serialize(serializer)
-}
-
-fn deserialize_content<'a, D: Deserializer<'a>>(
-    deserializer: D
-) -> Result<text_editor::Content, D::Error> {
-    let mut content = text_editor::Content::with_text(&String::deserialize(deserializer)?);
-    content.perform(text_editor::Action::Move(Motion::DocumentEnd));
-    Ok(content)
-}
-
-struct Picker {
-    selected: Option<usize>,
-    kind: PickerKind
-}
-
-impl Picker {
-    const MAX_IDEAS: usize = 5;
-}
-
-#[derive(Clone, Debug)]
-enum PickerKind {
-    Idea {
-        query: String,
-        ideas: Vec<(IdeaRef, Markdown)>
-    },
-    Tag {
-        tags: Vec<String>
-    }
+    tag_filter: Option<String>
 }
 
 type Element<'a, M = Message> = iced::Element<'a, M, CatppuccinFrappe>;
@@ -97,9 +44,10 @@ type Task<M = Message> = iced::Task<M>;
 enum Message {
     NewIdea { content: text_editor::Content },
     Editor(text_editor::Action),
-    CopyLink(IdeaRef),
+
     Reply(IdeaRef),
     Save,
+
     Refocus,
 
     KeyPress(Key, keyboard::Modifiers),
@@ -130,31 +78,25 @@ fn main() -> anyhow::Result<()> {
     let vault_path = dirs::data_dir().unwrap().join("pokisona/vault");
 
     env::set_current_dir(&vault_path)?;
-    let cache = match Cache::load() {
+    let mut cache = match Cache::load() {
         Ok(cache) => cache,
         Err(error) => {
-            warn!("Error while reading cache: {error}, recreating it");
+            error!("Error while reading cache: {error}, recreating it");
             Cache::new()?
         }
     };
 
-    let history = match History::new() {
-        Ok(history) => history,
-        Err(error) => {
-            warn!("Error while reading history: {error}, recreating it");
-            History::default()
-        }
-    };
-
+    let view_manager = ViewManager::new(&mut cache)
+        .inspect_err(|error| error!("Error while reading history: {error}, recreating it"))
+        .unwrap_or_default();
     let app = RefCell::new(Some(Pokisona {
         error: None,
-        history,
         cache,
-        picker: None,
+        view_manager,
         tag_filter: None
     }));
 
-    let boot = move || app.borrow_mut().take().unwrap();
+    let boot = move || (app.borrow_mut().take().unwrap(), focus("editor"));
     iced::application(boot, Pokisona::update, Pokisona::view)
         .settings(iced::Settings {
             default_text_size: BASE_FONT_SIZE.into(),
@@ -162,7 +104,10 @@ fn main() -> anyhow::Result<()> {
         })
         .theme(Pokisona::theme)
         .font(LUCIDE_FONT_BYTES)
-        .font(include_bytes!("../Libron_Regular.ttf"))
+        .font(include_bytes!("../fonts/Libron_Regular.ttf"))
+        .font(include_bytes!("../fonts/Libron_Bold.ttf"))
+        .font(include_bytes!("../fonts/Libron_Italic.ttf"))
+        .font(include_bytes!("../fonts/Libron_BoldItalic.ttf"))
         .subscription(Pokisona::subscription)
         .run()?;
     Ok(())
