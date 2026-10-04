@@ -22,14 +22,21 @@ use crate::{
 
 impl Pokisona {
     pub fn update(&mut self, msg: Message) -> Task {
-        match self.try_update(msg) {
+        let task = match self.try_update(msg) {
             Err(error) => {
                 error!("{error}");
                 self.error = Some(error.to_string());
                 Task::none()
             }
             Ok(task) => task
+        };
+
+        if let Err(error) = self.history.save_if_needed() {
+            error!("{error}");
+            self.error = Some(error.to_string());
         }
+
+        task
     }
 
     fn try_update(&mut self, msg: Message) -> anyhow::Result<Task> {

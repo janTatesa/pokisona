@@ -15,16 +15,18 @@ use std::{cell::RefCell, env};
 use iced::{
     Event, Subscription, event,
     keyboard::{self, Key},
-    widget::text_editor::{self}
+    widget::text_editor::{self, Motion}
 };
 use log::warn;
 use lucide_icons::LUCIDE_FONT_BYTES;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::{
     cache::{Cache, IdeaRef},
     history::History,
     markdown::Markdown,
-    theme::CatppuccinFrappe
+    theme::CatppuccinFrappe,
+    view::BASE_FONT_SIZE
 };
 
 struct Pokisona {
@@ -35,10 +37,14 @@ struct Pokisona {
     picker: Option<Picker>
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
 enum View {
-    Title(Markdown),
+    Title,
     NewIdea {
+        #[serde(
+            serialize_with = "serialize_content",
+            deserialize_with = "deserialize_content"
+        )]
         content: text_editor::Content
     },
     Idea {
@@ -49,10 +55,19 @@ enum View {
     }
 }
 
-impl Default for View {
-    fn default() -> Self {
-        Self::Title(Markdown::new(include_str!("../README.md")))
-    }
+fn serialize_content<S: Serializer>(
+    content: &text_editor::Content,
+    serializer: S
+) -> Result<S::Ok, S::Error> {
+    content.text().serialize(serializer)
+}
+
+fn deserialize_content<'a, D: Deserializer<'a>>(
+    deserializer: D
+) -> Result<text_editor::Content, D::Error> {
+    let mut content = text_editor::Content::with_text(&String::deserialize(deserializer)?);
+    content.perform(text_editor::Action::Move(Motion::DocumentEnd));
+    Ok(content)
 }
 
 struct Picker {
@@ -122,18 +137,27 @@ fn main() -> anyhow::Result<()> {
             Cache::new()?
         }
     };
-    let cache_wrapped = RefCell::new(Some(cache));
-    let boot = move || Pokisona {
-        error: None,
-        history: History::default(),
-        cache: cache_wrapped.take().unwrap(),
-        picker: None,
-        tag_filter: None
+
+    let history = match History::new() {
+        Ok(history) => history,
+        Err(error) => {
+            warn!("Error while reading history: {error}, recreating it");
+            History::default()
+        }
     };
 
+    let app = RefCell::new(Some(Pokisona {
+        error: None,
+        history,
+        cache,
+        picker: None,
+        tag_filter: None
+    }));
+
+    let boot = move || app.borrow_mut().take().unwrap();
     iced::application(boot, Pokisona::update, Pokisona::view)
         .settings(iced::Settings {
-            default_text_size: Pokisona::BASE_FONT_SIZE.into(),
+            default_text_size: BASE_FONT_SIZE.into(),
             ..Default::default()
         })
         .theme(Pokisona::theme)

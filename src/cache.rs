@@ -77,7 +77,7 @@ static PATH: LazyLock<PathBuf> =
     LazyLock::new(|| dirs::data_dir().unwrap().join("pokisona/cache.bin"));
 impl Cache {
     pub fn load() -> anyhow::Result<Self> {
-        let this: Self = postcard::from_bytes(&fs::read(&*PATH)?)?;
+        let this: Self = postcard::from_bytes(&fs::read(&*PATH)?).unwrap();
         if this.last_modified < fs::metadata(env::current_dir()?)?.modified()? {
             warn!("Vault has been modified by external process, rebuilding cache");
             Self::new()
@@ -130,9 +130,7 @@ impl Cache {
 
     fn save(&mut self) -> io::Result<()> {
         self.last_modified = SystemTime::now();
-        fs::write(&*PATH, postcard::to_allocvec(&self).unwrap())?;
-        let vault = File::open(env::current_dir()?)?;
-        vault.set_modified(self.last_modified)
+        fs::write(&*PATH, postcard::to_allocvec(&self).unwrap())
     }
 
     pub fn create(&mut self, contents: &str, markdown: &Markdown) -> io::Result<IdeaRef> {

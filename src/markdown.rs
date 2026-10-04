@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::{borrow::Cow, str::FromStr};
 
 use bitflags::bitflags;
 use chumsky::{
@@ -7,10 +7,11 @@ use chumsky::{
     prelude::*,
     text::newline
 };
+use serde::{Deserialize, Serialize};
 
 use crate::cache::IdeaRef;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Markdown(Vec<MarkdownLine>);
 
 impl Markdown {
@@ -31,7 +32,7 @@ impl Markdown {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarkdownLine {
     pub list_item: Option<ListItem>,
     pub spans: Vec<MarkdownSpan>
@@ -195,7 +196,7 @@ fn modifier_span<'a>(
     context: ParsingContext
 ) -> impl Parser<'a, &'a str, Vec<MarkdownSpan>, Full<EmptyErr, SimpleState<Modifiers>, ParsingContext>>
 {
-    let delimeter = just(delimeter).map(move |_| MarkdownSpan::ModifierDelimeter(delimeter));
+    let delimeter = just(delimeter).map(move |_| MarkdownSpan::ModifierDelimeter(delimeter.into()));
     map_ctx(move |ctx| *ctx | context, markdown)
         .delimited_by(delimeter, delimeter)
         .contextual()
@@ -204,16 +205,15 @@ fn modifier_span<'a>(
         .boxed()
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ListItem {
     Bullet,
     Number(u32)
 }
 
-#[derive(Debug, Clone)]
-#[expect(dead_code)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum MarkdownSpan {
-    ModifierDelimeter(&'static str),
+    ModifierDelimeter(Cow<'static, str>),
     Text(String, Modifiers),
     Tag(String),
     Link {
@@ -224,7 +224,7 @@ pub enum MarkdownSpan {
 }
 
 bitflags! {
-    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
     pub struct Modifiers: u8 {
         const NONE = 0;
         const BOLD = 1 << 0;

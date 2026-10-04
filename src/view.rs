@@ -1,4 +1,4 @@
-use std::{borrow::Cow, iter};
+use std::{borrow::Cow, iter, sync::LazyLock};
 
 use iced::{
     Alignment, Font, Length, border,
@@ -27,19 +27,21 @@ use crate::{
     theme::{ButtonClass, CATPPUCCIN, CatppuccinFrappe, ContainerClass, TextClass}
 };
 
+static TITLE: LazyLock<Markdown> = LazyLock::new(|| Markdown::new(include_str!("../README.md")));
+const SPACING: f32 = 8.0;
+const IDEA_SIZE: f32 = 500.0;
+pub const BASE_FONT_SIZE: f32 = 18.0;
+
 impl Pokisona {
-    const SPACING: f32 = 8.0;
-    const IDEA_SIZE: f32 = 500.0;
-    pub const BASE_FONT_SIZE: f32 = 18.0;
     pub fn view(&self) -> Element<'_> {
         let content: Element = match self.history.current_view() {
-            View::Title(markdown) => container(
-                container(self.view_markdown(markdown))
-                    .width(Self::IDEA_SIZE)
-                    .padding(Self::SPACING)
+            View::Title => container(
+                container(self.view_markdown(&TITLE))
+                    .width(IDEA_SIZE)
+                    .padding(SPACING)
                     .class(ContainerClass::BorderedBox { highlighted: false })
             )
-            .padding(Self::SPACING * 2.0)
+            .padding(SPACING * 2.0)
             .into(),
             // TODO: add highlighting
             View::NewIdea { content, .. } => widget::text_editor(content)
@@ -71,9 +73,9 @@ impl Pokisona {
                 })
                 .wrapping(Wrapping::WordOrGlyph)
                 .placeholder("Your idea...")
-                .width(Self::IDEA_SIZE)
-                .height(Self::IDEA_SIZE / 2.0)
-                .padding(Self::SPACING)
+                .width(IDEA_SIZE)
+                .height(IDEA_SIZE / 2.0)
+                .padding(SPACING)
                 .id("editor")
                 .into(),
             View::Idea {
@@ -85,7 +87,7 @@ impl Pokisona {
                 row(links.iter().map(|(idea, markdown)| {
                     self.view_idea(Some(*idea), markdown, ViewIdeaOptions::default())
                 }))
-                .spacing(Self::SPACING)
+                .spacing(SPACING)
                 .align_y(Alignment::End)
                 .height(Length::Fill),
                 self.view_idea(
@@ -101,10 +103,10 @@ impl Pokisona {
                     markdown,
                     ViewIdeaOptions::default()
                 )))
-                .spacing(Self::SPACING)
+                .spacing(SPACING)
                 .height(Length::Fill),
             ]
-            .spacing(Self::SPACING)
+            .spacing(SPACING)
             .align_x(Alignment::Center)
             .into()
         };
@@ -117,10 +119,10 @@ impl Pokisona {
                 content,
                 container(tooltip)
                     .class(ContainerClass::Surface1)
-                    .padding(Pokisona::SPACING),
+                    .padding(SPACING),
                 tooltip::Position::Bottom
             )
-            .gap(Pokisona::SPACING)
+            .gap(SPACING)
             .into()
         }
 
@@ -148,7 +150,7 @@ impl Pokisona {
                 "Go forward (Alt-right)"
             ),
         ]
-        .spacing(Self::SPACING);
+        .spacing(SPACING);
 
         let top_right_buttons = match self.history.current_view() {
             View::NewIdea { .. } => {
@@ -166,7 +168,7 @@ impl Pokisona {
                 top_button(Icon::Reply, Some(Message::Reply(*idea)), "Reply (Ctrl-p)"),
                 rule::vertical(1.0)
             ],
-            View::Title(_) => row![]
+            View::Title => row![]
         }
         .extend([
             top_button(
@@ -193,17 +195,17 @@ impl Pokisona {
             )
         ])
         .height(Length::Shrink)
-        .spacing(Self::SPACING);
+        .spacing(SPACING);
         let top_right_buttons = container(top_right_buttons)
             .align_right(Length::Fill)
-            .padding(Self::SPACING);
+            .padding(SPACING);
         let error = self
             .error
             .as_ref()
             .map(|error| widget::text(error).class(TextClass::Danger));
         let top_left = row![top_left_buttons, error]
-            .spacing(Self::SPACING)
-            .padding(Self::SPACING)
+            .spacing(SPACING)
+            .padding(SPACING)
             .align_y(Alignment::Center);
         let picker = self.picker.as_ref().map(|picker| {
             let content: Element<'_> = match &picker.kind {
@@ -219,7 +221,7 @@ impl Pokisona {
                     };
                     self.view_idea(Some(*idea), markdown, options)
                 }))
-                .spacing(Self::SPACING)
+                .spacing(SPACING)
                 .align_x(Alignment::Center)
                 .into(),
                 PickerKind::Tag { tags } => grid(tags.iter().enumerate().map(|(i, tag)| {
@@ -239,18 +241,18 @@ impl Pokisona {
                 }))
                 .height(Length::Shrink)
                 .columns(4)
-                .spacing(Self::SPACING)
+                .spacing(SPACING)
                 .into()
             };
 
             container(opaque(
                 container(content)
-                    .padding(Self::SPACING)
-                    .center_x(Self::IDEA_SIZE * 2.0)
+                    .padding(SPACING)
+                    .center_x(IDEA_SIZE * 2.0)
                     .class(ContainerClass::Surface0)
             ))
             .center_x(Length::Fill)
-            .padding(Self::SPACING)
+            .padding(SPACING)
         });
 
         let overlay = self.picker.is_some().then(|| {
@@ -280,9 +282,9 @@ impl Pokisona {
                             .on_press(Message::UnsetTagFilter)
                     ]
                     .align_y(Alignment::Center)
-                    .spacing(Self::SPACING)
+                    .spacing(SPACING)
                 }))
-                .padding(Self::SPACING)
+                .padding(SPACING)
                 .center_x(Length::Fill),
                 top_left,
             ],
@@ -298,7 +300,7 @@ impl Pokisona {
         markdown: &'a Markdown,
         options: ViewIdeaOptions
     ) -> Element<'a> {
-        let size = Self::BASE_FONT_SIZE * if options.enlarged { 1.5 } else { 1.0 };
+        let size = BASE_FONT_SIZE * if options.enlarged { 1.5 } else { 1.0 };
         let text_span = |text: Cow<'a, str>, modifiers: Modifiers| {
             widget::span(text).font(Font {
                 weight: if modifiers.contains(Modifiers::BOLD) {
@@ -375,20 +377,20 @@ impl Pokisona {
                 idea.map(|idea| rich_text![
                     span(idea.to_string())
                         .color(CATPPUCCIN.blue)
-                        .size(Self::BASE_FONT_SIZE * scale * 1.2)
+                        .size(BASE_FONT_SIZE * scale * 1.2)
                         .link(idea)
                 ]
                 .on_link_click(Message::OpenIdea)),
                 idea.is_some().then_some(rule::horizontal(1)),
                 markdown
             ]
-            .spacing(Self::SPACING)
+            .spacing(SPACING)
         ))
         .class(ContainerClass::BorderedBox {
             highlighted: options.highlighted
         })
-        .width(Self::IDEA_SIZE * scale)
-        .padding(Self::SPACING)
+        .width(IDEA_SIZE * scale)
+        .padding(SPACING)
         .into()
     }
 

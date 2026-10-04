@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 iced = { version = "0.14", features = ["advanced", "smol"] }
 dirs = "7.0.0"
-bitflags = "2.10.0"
+bitflags = { version = "2.10.0", features = ["serde"] }
 itertools = "0.15.0"
 lucide-icons = { version = "*", features = ["iced"] }
 strum = { version = "0.28.0", features = ["derive"] }
