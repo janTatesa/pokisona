@@ -10,15 +10,8 @@ mod theme;
 mod update;
 mod view;
 
-use std::{
-    cell::RefCell,
-    env,
-    fs::{self},
-    path::PathBuf
-};
+use std::{cell::RefCell, env};
 
-use anyhow::anyhow;
-use clap::Parser;
 use iced::{
     Event, Subscription, event,
     keyboard::{self, Key},
@@ -116,39 +109,12 @@ enum Message {
     HistoryClose
 }
 
-#[derive(Parser)]
-#[command(version)]
-struct Cli {
-    vault_path: Option<PathBuf>
-}
-
 fn main() -> anyhow::Result<()> {
     env_logger::try_init()?;
 
-    let cli = Cli::parse();
-    let last_vault_file_path = dirs::state_dir()
-        .or(dirs::data_dir())
-        .expect("Should work on all platforms")
-        .join("pokisona/last_vault");
-    let vault_path = if let Some(path) = cli.vault_path {
-        let path = if path.is_absolute() {
-            path
-        } else {
-            env::current_dir()?.join(path)
-        };
+    let vault_path = dirs::data_dir().unwrap().join("pokisona/vault");
 
-        fs::create_dir_all(last_vault_file_path.parent().unwrap())?;
-        fs::write(last_vault_file_path, path.to_str().unwrap())?;
-        path
-    } else if !last_vault_file_path.exists() {
-        return Err(anyhow!("You have to specify vault path on first startup"));
-    } else {
-        fs::read_to_string(last_vault_file_path)?.into()
-    };
-
-    fs::create_dir_all(format!("{}/.pokisona", vault_path.to_str().unwrap()))?;
     env::set_current_dir(&vault_path)?;
-
     let cache = match Cache::load() {
         Ok(cache) => cache,
         Err(error) => {

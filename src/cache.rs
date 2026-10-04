@@ -4,7 +4,9 @@ use std::{
     fmt::{Debug, Display, Formatter},
     fs::{self, File},
     io::{self, Write},
+    path::PathBuf,
     str::FromStr,
+    sync::LazyLock,
     time::SystemTime
 };
 
@@ -71,11 +73,11 @@ pub struct IdeaCache {
     pub last_accessed: SystemTime
 }
 
+static PATH: LazyLock<PathBuf> =
+    LazyLock::new(|| dirs::data_dir().unwrap().join("pokisona/cache.bin"));
 impl Cache {
-    const PATH: &str = ".pokisona/cache.bin";
-
     pub fn load() -> anyhow::Result<Self> {
-        let this: Self = postcard::from_bytes(&fs::read(Self::PATH)?)?;
+        let this: Self = postcard::from_bytes(&fs::read(&*PATH)?)?;
         if this.last_modified < fs::metadata(env::current_dir()?)?.modified()? {
             warn!("Vault has been modified by external process, rebuilding cache");
             Self::new()
@@ -128,7 +130,7 @@ impl Cache {
 
     fn save(&mut self) -> io::Result<()> {
         self.last_modified = SystemTime::now();
-        fs::write(Self::PATH, postcard::to_allocvec(&self).unwrap())?;
+        fs::write(&*PATH, postcard::to_allocvec(&self).unwrap())?;
         let vault = File::open(env::current_dir()?)?;
         vault.set_modified(self.last_modified)
     }
