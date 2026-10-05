@@ -1,7 +1,7 @@
 use std::{
     cmp::{max, min},
     fs, io,
-    sync::Arc
+    sync::Arc,
 };
 
 use chumsky::Parser;
@@ -12,20 +12,20 @@ use iced::{
     widget::{
         operation::focus,
         text::Position,
-        text_editor::{self, Content, Cursor, Edit}
-    }
+        text_editor::{self, Content, Cursor, Edit},
+    },
 };
 use log::error;
 use norm::{
     Metric,
-    fzf::{FzfParser, FzfV2}
+    fzf::{FzfParser, FzfV2},
 };
 use rand::seq::IndexedRandom;
 
 use crate::{
     Message, Pokisona,
     markdown::{ListItem, Markdown, MarkdownLine},
-    view_manager::{Picker, PickerKind, View}
+    view_manager::{Picker, PickerKind, View},
 };
 
 impl Pokisona {
@@ -38,11 +38,11 @@ impl Pokisona {
                 self.error = Some(error.to_string());
                 Task::none()
             }
-            Ok(task) => task
+            Ok(task) => task,
         }
     }
 
-    fn try_update(&mut self, msg: Message) -> anyhow::Result<Task<Message>> {
+    fn try_update(&mut self, msg: Message) -> color_eyre::Result<Task<Message>> {
         match msg {
             Message::Refocus => {
                 return Ok(focus(if self.view_manager.picker.is_some() {
@@ -64,7 +64,7 @@ impl Pokisona {
                         let start = match line.list_item {
                             Some((_, ListItem::Bullet)) => "- ".to_string(),
                             Some((_, ListItem::Number(number))) => format!("{}. ", number + 1),
-                            None => todo!()
+                            None => todo!(),
                         };
                         content.perform(action);
                         content.perform(text_editor::Action::Edit(Edit::Paste(Arc::new(start))));
@@ -84,7 +84,7 @@ impl Pokisona {
                     let idea = self.cache.create(&contents, &markdown)?;
                     *view = View::Idea {
                         idea,
-                        current_ideas: self.cache.read_relevant(idea)?
+                        current_ideas: self.cache.read_relevant(idea)?,
                     };
 
                     Ok(())
@@ -93,12 +93,12 @@ impl Pokisona {
 
             Message::OpenIdea(idea) => self.view_manager.insert(View::Idea {
                 idea,
-                current_ideas: self.cache.read_relevant(idea)?
+                current_ideas: self.cache.read_relevant(idea)?,
             })?,
             Message::OpenRandom => {
                 let ideas = match &self.tag_filter {
                     Some(filter) => Either::Left(self.cache.tags()[filter].ideas.iter()),
-                    None => Either::Right(self.cache.ideas().keys())
+                    None => Either::Right(self.cache.ideas().keys()),
                 };
 
                 let files: Vec<_> = ideas
@@ -124,7 +124,7 @@ impl Pokisona {
                     .0;
                 self.view_manager.insert(View::Idea {
                     idea,
-                    current_ideas: self.cache.read_relevant(idea)?
+                    current_ideas: self.cache.read_relevant(idea)?,
                 })?;
             }
 
@@ -147,7 +147,7 @@ impl Pokisona {
                 let query = String::new();
                 self.view_manager.picker = Some(Picker {
                     selected: None,
-                    kind: PickerKind::Idea { query, ideas, link }
+                    kind: PickerKind::Idea { query, ideas, link },
                 });
                 return Ok(focus("picker_query"));
             }
@@ -157,7 +157,7 @@ impl Pokisona {
                 tags.reverse();
                 self.view_manager.picker = Some(Picker {
                     selected: None,
-                    kind: PickerKind::Tag { tags }
+                    kind: PickerKind::Tag { tags },
                 });
             }
 
@@ -168,7 +168,7 @@ impl Pokisona {
             Message::PickerQuery(new_query) => {
                 let Some(Picker {
                     selected,
-                    kind: PickerKind::Idea { query, ideas, .. }
+                    kind: PickerKind::Idea { query, ideas, .. },
                 }) = &mut self.view_manager.picker
                 else {
                     panic!()
@@ -211,7 +211,7 @@ impl Pokisona {
                 let picker = self.view_manager.picker.as_mut().unwrap();
                 let (len, increment) = match &picker.kind {
                     PickerKind::Idea { ideas, .. } => (ideas.len(), 1),
-                    PickerKind::Tag { tags } => (tags.len(), 4)
+                    PickerKind::Tag { tags } => (tags.len(), 4),
                 };
 
                 picker.selected = Some(picker.selected.map_or(0, |selected| selected + increment))
@@ -225,7 +225,7 @@ impl Pokisona {
             Message::PickRight => {
                 if let Some(Picker {
                     kind: PickerKind::Tag { tags },
-                    selected
+                    selected,
                 }) = &mut self.view_manager.picker
                 {
                     *selected = Some(selected.map_or(0, |selected| selected + 1))
@@ -235,7 +235,7 @@ impl Pokisona {
             Message::PickLeft => {
                 if let Some(Picker {
                     kind: PickerKind::Tag { .. },
-                    selected
+                    selected,
                 }) = &mut self.view_manager.picker
                 {
                     *selected = selected.and_then(|selected| selected.checked_sub(1));
@@ -245,7 +245,7 @@ impl Pokisona {
             Message::KeyPress(key, modifiers) => {
                 return Ok(Task::done(match (key.as_ref(), modifiers) {
                     (Key::Character("n"), keyboard::Modifiers::CTRL) => Message::NewIdea {
-                        content: Content::new()
+                        content: Content::new(),
                     },
                     (Key::Character("f"), keyboard::Modifiers::CTRL) => {
                         Message::OpenIdeaPicker { link: false }
@@ -295,7 +295,7 @@ impl Pokisona {
                     (Key::Named(key::Named::Enter), keyboard::Modifiers::NONE)
                         if let Some(Picker {
                             selected: Some(selected),
-                            kind: PickerKind::Idea { ideas, link, .. }
+                            kind: PickerKind::Idea { ideas, link, .. },
                         }) = &self.view_manager.picker =>
                     {
                         if *link {
@@ -307,7 +307,7 @@ impl Pokisona {
                     (Key::Named(key::Named::Enter), keyboard::Modifiers::NONE)
                         if let Some(Picker {
                             selected: Some(selected),
-                            kind: PickerKind::Tag { tags }
+                            kind: PickerKind::Tag { tags },
                         }) = &self.view_manager.picker =>
                     {
                         Message::SetTagFilter(tags[*selected].clone())
@@ -340,7 +340,7 @@ impl Pokisona {
                         Message::Tag
                     }
 
-                    _ => return Ok(Task::none())
+                    _ => return Ok(Task::none()),
                 }));
             }
             Message::ClosePicker => self.view_manager.picker = None,
@@ -369,15 +369,15 @@ impl Pokisona {
 
                 let Cursor {
                     position,
-                    selection
+                    selection,
                 } = content.cursor();
 
                 content.move_to(Cursor {
                     position: Position {
                         line: position.line,
-                        index: min(position.index, selection.unwrap().index)
+                        index: min(position.index, selection.unwrap().index),
                     },
-                    selection: None
+                    selection: None,
                 });
 
                 content.perform(text_editor::Action::Edit(Edit::Insert('_')));
@@ -385,9 +385,9 @@ impl Pokisona {
                 content.move_to(Cursor {
                     position: Position {
                         line: position.line,
-                        index: max(position.index, selection.unwrap().index)
+                        index: max(position.index, selection.unwrap().index),
                     },
-                    selection: None
+                    selection: None,
                 });
 
                 content.perform(text_editor::Action::Edit(Edit::Insert('_')));
@@ -399,15 +399,15 @@ impl Pokisona {
 
                 let Cursor {
                     position,
-                    selection
+                    selection,
                 } = content.cursor();
 
                 content.move_to(Cursor {
                     position: Position {
                         line: position.line,
-                        index: min(position.index, selection.unwrap().index)
+                        index: min(position.index, selection.unwrap().index),
                     },
-                    selection: None
+                    selection: None,
                 });
 
                 (0..2).for_each(|_| content.perform(text_editor::Action::Edit(Edit::Insert('*'))));
@@ -415,9 +415,9 @@ impl Pokisona {
                 content.move_to(Cursor {
                     position: Position {
                         line: position.line,
-                        index: max(position.index, selection.unwrap().index)
+                        index: max(position.index, selection.unwrap().index),
                     },
-                    selection: None
+                    selection: None,
                 });
 
                 (0..2).for_each(|_| content.perform(text_editor::Action::Edit(Edit::Insert('*'))));
@@ -440,7 +440,7 @@ impl Pokisona {
                 };
                 content.perform(text_editor::Action::Edit(Edit::Enter));
                 content.perform(text_editor::Action::Edit(Edit::Paste(Arc::new(
-                    "- ".to_string()
+                    "- ".to_string(),
                 ))));
             })?,
             Message::NumberedList => self.view_manager.modify(|view| {
@@ -449,7 +449,7 @@ impl Pokisona {
                 };
                 content.perform(text_editor::Action::Edit(Edit::Enter));
                 content.perform(text_editor::Action::Edit(Edit::Paste(Arc::new(
-                    "1. ".to_string()
+                    "1. ".to_string(),
                 ))));
             })?,
             Message::AddLink(idea) => {

@@ -7,7 +7,7 @@ use iced::widget::text_editor::{self};
 use crate::{
     cache::{Cache, IdeaRef},
     markdown::Markdown,
-    view_manager::serde::ViewSerde
+    view_manager::serde::ViewSerde,
 };
 
 static PATH: LazyLock<PathBuf> =
@@ -15,7 +15,7 @@ static PATH: LazyLock<PathBuf> =
 pub struct ViewManager {
     view: View,
     pub picker: Option<Picker>,
-    history: History
+    history: History,
 }
 
 impl Deref for ViewManager {
@@ -33,20 +33,20 @@ impl Default for ViewManager {
             picker: None,
             history: History {
                 views: vec![ViewSerde::Title],
-                index: 0
-            }
+                index: 0,
+            },
         }
     }
 }
 
 impl ViewManager {
-    pub fn new(cache: &mut Cache) -> anyhow::Result<Self> {
+    pub fn new(cache: &mut Cache) -> color_eyre::Result<Self> {
         Ok(if PATH.exists() {
             let history: History = postcard::from_bytes(&fs::read(&*PATH)?)?;
             Self {
                 view: history.views[history.index].to_normal(cache)?,
                 picker: None,
-                history
+                history,
             }
         } else {
             Self::default()
@@ -126,13 +126,13 @@ pub enum View {
     Editor(text_editor::Content),
     Idea {
         idea: IdeaRef,
-        current_ideas: HashMap<IdeaRef, Markdown>
-    }
+        current_ideas: HashMap<IdeaRef, Markdown>,
+    },
 }
 
 pub struct Picker {
     pub selected: Option<usize>,
-    pub kind: PickerKind
+    pub kind: PickerKind,
 }
 
 impl Picker {
@@ -144,15 +144,15 @@ pub enum PickerKind {
     Idea {
         query: String,
         ideas: Vec<(IdeaRef, Markdown)>,
-        link: bool
+        link: bool,
     },
     Tag {
-        tags: Vec<String>
-    }
+        tags: Vec<String>,
+    },
 }
 
 #[derive(Serialize, Deserialize)]
 struct History {
     views: Vec<ViewSerde>,
-    index: usize
+    index: usize,
 }

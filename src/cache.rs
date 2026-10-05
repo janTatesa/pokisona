@@ -8,13 +8,13 @@ use std::{
     path::PathBuf,
     str::FromStr,
     sync::LazyLock,
-    time::SystemTime
+    time::SystemTime,
 };
 
 use catppuccin::{ColorName, PALETTE};
 use jiff::{
     Zoned,
-    civil::{Date, DateTime}
+    civil::{Date, DateTime},
 };
 use log::{error, warn};
 use serde::{Deserialize, Serialize};
@@ -25,13 +25,13 @@ use crate::markdown::{Markdown, MarkdownSpan};
 pub struct Cache {
     ideas: BTreeMap<IdeaRef, IdeaCache>,
     tags: HashMap<String, TagCache>,
-    last_modified: SystemTime
+    last_modified: SystemTime,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TagCache {
     pub ideas: BTreeSet<IdeaRef>,
-    pub color: catppuccin::ColorName
+    pub color: catppuccin::ColorName,
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Hash)]
@@ -39,7 +39,7 @@ pub struct IdeaRef {
     date: Date,
     hour: i8,
     minute: i8,
-    second: i8
+    second: i8,
 }
 
 impl FromStr for IdeaRef {
@@ -51,7 +51,7 @@ impl FromStr for IdeaRef {
             date: date_time.date(),
             hour: date_time.hour(),
             minute: date_time.minute(),
-            second: date_time.second()
+            second: date_time.second(),
         })
     }
 }
@@ -71,13 +71,17 @@ pub struct IdeaCache {
     pub links: BTreeSet<IdeaRef>,
     pub backlinks: BTreeSet<IdeaRef>,
     pub tags: BTreeSet<String>,
-    pub last_accessed: SystemTime
+    pub last_accessed: SystemTime,
 }
 
 static PATH: LazyLock<PathBuf> =
     LazyLock::new(|| dirs::data_dir().unwrap().join("pokisona/cache.bin"));
 impl Cache {
-    pub fn load() -> anyhow::Result<Self> {
+    pub fn new() -> color_eyre::Result<Self> {
+        if !PATH.exists() {
+            return Self::build();
+        }
+
         let this: Self = postcard::from_bytes(&fs::read(&*PATH)?)?;
         if this.last_modified < fs::metadata(env::current_dir()?)?.modified()? {
             warn!("Vault has been modified by external process, rebuilding cache");
@@ -111,7 +115,7 @@ impl Cache {
         Ok(out)
     }
 
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn build() -> color_eyre::Result<Self> {
         let ideas: BTreeSet<_> = fs::read_dir(env::current_dir()?)?
             .filter_map(|entry| {
                 let file = match entry {
@@ -133,7 +137,7 @@ impl Cache {
         let mut this = Cache {
             ideas: BTreeMap::new(),
             last_modified: SystemTime::now(),
-            tags: HashMap::new()
+            tags: HashMap::new(),
         };
         for (idea, accessed) in ideas {
             let markdown = Markdown::new(&fs::read_to_string(format!("{idea}.md"))?);
@@ -156,7 +160,7 @@ impl Cache {
             date: now.date(),
             hour: now.hour(),
             minute: now.minute(),
-            second: now.second()
+            second: now.second(),
         };
 
         let mut file = File::create(format!("{idea}.md"))?;
@@ -201,7 +205,7 @@ impl Cache {
             links,
             backlinks: BTreeSet::new(),
             last_accessed,
-            tags
+            tags,
         };
         self.ideas.insert(idea, entry);
     }

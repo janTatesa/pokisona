@@ -73,7 +73,8 @@ enum Message {
     HistoryClose,
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> color_eyre::Result<()> {
+    color_eyre::install()?;
     env_logger::try_init()?;
 
     let vault_path = dirs::data_dir().unwrap().join("pokisona/vault");
@@ -81,11 +82,11 @@ fn main() -> anyhow::Result<()> {
     fs::create_dir_all(&vault_path)?;
     env::set_current_dir(&vault_path)?;
 
-    let mut cache = match Cache::load() {
+    let mut cache = match Cache::new() {
         Ok(cache) => cache,
         Err(error) => {
             error!("Error while reading cache: {error}, recreating it");
-            Cache::new()?
+            Cache::build()?
         }
     };
 
