@@ -37,7 +37,7 @@ use crate::{
 
 static TITLE: LazyLock<Markdown> = LazyLock::new(|| Markdown::new(include_str!("../README.md")));
 const SPACING: f32 = 8.0;
-const IDEA_SIZE: f32 = 500.0;
+const IDEA_SIZE: f32 = 600.0;
 pub const BASE_FONT_SIZE: f32 = 18.0;
 
 impl Pokisona {
@@ -52,25 +52,73 @@ impl Pokisona {
             .padding(SPACING * 2.0)
             .boxed(),
 
-            View::Editor(content) => widget::text_editor(content)
-                .on_action(Message::Editor)
-                .font(Font {
-                    family: Family::Name("Libron"),
-                    ..Default::default()
-                })
-                .key_binding(|press| match press.key {
-                    Key::Named(key::Named::Escape) => None,
+            View::Editor(content) => {
+                let on_selection = |m: Message| content.cursor().selection.is_some().then_some(m);
+                column![
+                    row![
+                        button_helper(
+                            Icon::Italic,
+                            on_selection(Message::Italic),
+                            "Italic (Ctrl-i)",
+                            ButtonClass::Secondary
+                        ),
+                        button_helper(
+                            Icon::Bold,
+                            on_selection(Message::Bold),
+                            "Bold (Ctrl-b)",
+                            ButtonClass::Secondary
+                        ),
+                        button_helper(
+                            Icon::Tag,
+                            on_selection(Message::Tag),
+                            "Tag (Ctrl-shift-t)",
+                            ButtonClass::Secondary
+                        ),
+                        space().width(Length::Fill),
+                        button_helper(
+                            Icon::Link,
+                            Some(Message::OpenIdeaPicker { link: true }),
+                            "Link (Ctrl-l)",
+                            ButtonClass::Secondary
+                        ),
+                        button_helper(
+                            Icon::List,
+                            Some(Message::List),
+                            "List",
+                            ButtonClass::Secondary
+                        ),
+                        button_helper(
+                            Icon::ListOrdered,
+                            Some(Message::NumberedList),
+                            "Numbered list",
+                            ButtonClass::Secondary
+                        )
+                    ]
+                    .spacing(SPACING)
+                    .height(Length::Shrink),
+                    widget::text_editor(content)
+                        .on_action(Message::Editor)
+                        .font(Font {
+                            family: Family::Name("Libron"),
+                            ..Default::default()
+                        })
+                        .key_binding(|press| match press.key {
+                            Key::Named(key::Named::Escape) => None,
 
-                    _ => Binding::from_key_press(press)
-                })
-                .wrapping(Wrapping::WordOrGlyph)
-                .placeholder("Your idea...")
-                .width(IDEA_SIZE)
-                .height(IDEA_SIZE / 2.0)
-                .padding(SPACING)
-                .id("editor")
-                .highlight_with::<MarkdownParser>((), MarkdownPseudoHighlighter(&self.cache))
-                .boxed(),
+                            _ => Binding::from_key_press(press)
+                        })
+                        .wrapping(Wrapping::WordOrGlyph)
+                        .placeholder("Your idea...")
+                        .width(IDEA_SIZE)
+                        .height(IDEA_SIZE / 2.0)
+                        .padding(SPACING)
+                        .id("editor")
+                        .highlight_with::<MarkdownParser>((), MarkdownHighlighter(&self.cache))
+                ]
+                .spacing(SPACING)
+                .width(Length::Shrink)
+                .boxed()
+            }
             View::Idea {
                 idea,
                 current_ideas
@@ -79,7 +127,8 @@ impl Pokisona {
                     self.view_idea(
                         Some(*idea),
                         &current_ideas[idea],
-                        ViewIdeaOptions::default()
+                        ViewIdeaOptions::default(),
+                        Message::OpenIdea
                     )
                 }))
                 .spacing(SPACING)
@@ -91,7 +140,8 @@ impl Pokisona {
                     ViewIdeaOptions {
                         enlarged: true,
                         highlighted: true
-                    }
+                    },
+                    Message::OpenIdea
                 ),
                 row(self.cache.ideas()[idea]
                     .backlinks
@@ -99,8 +149,9 @@ impl Pokisona {
                     .map(|idea| self.view_idea(
                         Some(*idea),
                         &current_ideas[idea],
-                        ViewIdeaOptions::default()
-                    )))
+                        ViewIdeaOptions::default(),
+                        Message::OpenIdea
+                    ),))
                 .spacing(SPACING)
                 .height(Length::Fill),
             ]
@@ -183,7 +234,7 @@ impl Pokisona {
             .boxed(),
             button_helper(
                 Icon::FileSearch,
-                Some(Message::OpenIdeaPicker),
+                Some(Message::OpenIdeaPicker { link: false }),
                 "Open idea picker (Ctrl-f)",
                 ButtonClass::Primary
             )
@@ -218,7 +269,7 @@ impl Pokisona {
             .align_y(Alignment::Center);
         let picker = self.view_manager.picker.as_ref().map(|picker| {
             let content = match &picker.kind {
-                PickerKind::Idea { query, ideas } => column![
+                PickerKind::Idea { query, ideas, link } => column![
                     text_input("Enter query", query)
                         .id("picker_query")
                         .on_input(Message::PickerQuery)
@@ -228,7 +279,17 @@ impl Pokisona {
                         enlarged: false,
                         highlighted: picker.selected == Some(i)
                     };
-                    self.view_idea(Some(*idea), markdown, options).boxed()
+                    self.view_idea(
+                        Some(*idea),
+                        markdown,
+                        options,
+                        if *link {
+                            Message::AddLink
+                        } else {
+                            Message::OpenIdea
+                        }
+                    )
+                    .boxed()
                 }))
                 .spacing(SPACING)
                 .align_x(Alignment::Center)
@@ -308,7 +369,8 @@ impl Pokisona {
         &'a self,
         idea: Option<IdeaRef>,
         markdown: &'a Markdown,
-        options: ViewIdeaOptions
+        options: ViewIdeaOptions,
+        on_idea_link_click: fn(IdeaRef) -> Message
     ) -> impl Widget<Message, CatppuccinFrappe> {
         let size = BASE_FONT_SIZE * if options.enlarged { 1.5 } else { 1.0 };
         let text_span = |text: Cow<'a, str>, modifiers: Modifiers| {
@@ -376,8 +438,8 @@ impl Pokisona {
             .skip(1);
 
         let markdown = { Rich::from_iter(spans) }
-            .on_link_click(|link| match link {
-                Link::Idea(idea) => Message::OpenIdea(idea),
+            .on_link_click(move |link| match link {
+                Link::Idea(idea) => on_idea_link_click(idea),
                 Link::Tag(tag) => Message::SetTagFilter(tag)
             })
             .size(size);
@@ -488,13 +550,12 @@ struct ViewIdeaOptions {
 }
 
 struct MarkdownParser {
-    current_line: usize,
-    lenghts: Vec<usize>
+    current_line: usize
 }
 
 #[derive(Clone)]
 enum ParserOutput {
-    LineItemStart,
+    ListItemStart,
     Span(MarkdownSpan)
 }
 
@@ -509,43 +570,29 @@ impl text::Parser for MarkdownParser {
         Self: 'a;
 
     fn new((): &Self::Settings) -> Self {
-        Self {
-            current_line: 0,
-            lenghts: Vec::new()
-        }
+        Self { current_line: 0 }
     }
 
     fn update(&mut self, (): &Self::Settings) {}
 
     fn change_line(&mut self, line: usize) {
         self.current_line = line;
-        self.lenghts.drain(line..);
     }
 
     fn parse_line(&mut self, line: &str) -> Self::Iterator<'_> {
-        let markdown_line = MarkdownLine::parser()
-            .parse(line)
-            .into_output()
-            .expect("Parsing markdown should be infallible");
-        let offset: usize = self.lenghts.iter().sum();
+        let markdown_line = MarkdownLine::parser().parse(line).unwrap();
         let iter: Vec<_> = markdown_line
             .list_item
-            .map(|(range, _)| {
-                (
-                    (range.start + offset)..(range.end + offset),
-                    ParserOutput::LineItemStart
-                )
-            })
+            .map(|(range, _)| (range.into_range(), ParserOutput::ListItemStart))
             .into_iter()
-            .chain(markdown_line.spans.into_iter().map(|(range, span)| {
-                (
-                    (range.start + offset)..(range.end + offset),
-                    ParserOutput::Span(span)
-                )
-            }))
+            .chain(
+                markdown_line
+                    .spans
+                    .into_iter()
+                    .map(|(range, span)| (range.into_range(), ParserOutput::Span(span)))
+            )
             .collect();
         self.current_line += 1;
-        self.lenghts.push(line.len());
         iter.into_iter()
     }
 
@@ -554,17 +601,17 @@ impl text::Parser for MarkdownParser {
     }
 }
 
-struct MarkdownPseudoHighlighter<'a>(&'a Cache);
-impl Highlighter<ParserOutput, CatppuccinFrappe> for MarkdownPseudoHighlighter<'_> {
+struct MarkdownHighlighter<'a>(&'a Cache);
+impl Highlighter<ParserOutput, CatppuccinFrappe> for MarkdownHighlighter<'_> {
     fn id(&self) -> &'static str {
         "markdown highlighter"
     }
 
     fn highlight(&self, input: ParserOutput, _theme: &CatppuccinFrappe) -> highlighter::Style {
         match input {
-            ParserOutput::LineItemStart => highlighter::Style {
-                color: Some(CATPPUCCIN.overlay2.into()),
-                style: Some(font::Style::Italic)
+            ParserOutput::ListItemStart => highlighter::Style {
+                color: Some(CATPPUCCIN.blue.into()),
+                style: None
             },
             ParserOutput::Span(MarkdownSpan::ModifierDelimeter) => highlighter::Style {
                 color: Some(CATPPUCCIN.overlay0.into()),

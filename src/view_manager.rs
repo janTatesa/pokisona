@@ -143,7 +143,8 @@ impl Picker {
 pub enum PickerKind {
     Idea {
         query: String,
-        ideas: Vec<(IdeaRef, Markdown)>
+        ideas: Vec<(IdeaRef, Markdown)>,
+        link: bool
     },
     Tag {
         tags: Vec<String>

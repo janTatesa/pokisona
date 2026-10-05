@@ -1,12 +1,18 @@
-use std::{fs, io};
+use std::{
+    cmp::{max, min},
+    fs, io,
+    sync::Arc
+};
 
+use chumsky::Parser;
 use either::Either;
 use iced::{
     Task,
     keyboard::{self, Key, key},
     widget::{
         operation::focus,
-        text_editor::{self, Content, Motion}
+        text::Position,
+        text_editor::{self, Content, Cursor, Edit}
     }
 };
 use log::error;
@@ -18,7 +24,7 @@ use rand::seq::IndexedRandom;
 
 use crate::{
     Message, Pokisona,
-    markdown::Markdown,
+    markdown::{ListItem, Markdown, MarkdownLine},
     view_manager::{Picker, PickerKind, View}
 };
 
@@ -49,16 +55,28 @@ impl Pokisona {
             Message::Editor(action) => {
                 self.view_manager.modify(|view| {
                     let View::Editor(content) = view else {
-                        unreachable!()
+                        panic!()
                     };
 
-                    content.perform(action);
+                    if let text_editor::Action::Edit(Edit::Enter) = &action {
+                        let line = content.line(content.cursor().position.line).unwrap();
+                        let line = MarkdownLine::parser().parse(&line.text).unwrap();
+                        let start = match line.list_item {
+                            Some((_, ListItem::Bullet)) => "- ".to_string(),
+                            Some((_, ListItem::Number(number))) => format!("{}. ", number + 1),
+                            None => todo!()
+                        };
+                        content.perform(action);
+                        content.perform(text_editor::Action::Edit(Edit::Paste(Arc::new(start))));
+                    } else {
+                        content.perform(action);
+                    }
                 })?;
             }
             Message::Save => {
                 self.view_manager.modify(|view| -> io::Result<()> {
                     let View::Editor(content) = view else {
-                        unreachable!()
+                        panic!()
                     };
 
                     let contents = content.text();
@@ -110,7 +128,7 @@ impl Pokisona {
                 })?;
             }
 
-            Message::OpenIdeaPicker => {
+            Message::OpenIdeaPicker { link } => {
                 let ideas = self
                     .cache
                     .ideas()
@@ -129,7 +147,7 @@ impl Pokisona {
                 let query = String::new();
                 self.view_manager.picker = Some(Picker {
                     selected: None,
-                    kind: PickerKind::Idea { query, ideas }
+                    kind: PickerKind::Idea { query, ideas, link }
                 });
                 return Ok(focus("picker_query"));
             }
@@ -150,10 +168,10 @@ impl Pokisona {
             Message::PickerQuery(new_query) => {
                 let Some(Picker {
                     selected,
-                    kind: PickerKind::Idea { query, ideas }
+                    kind: PickerKind::Idea { query, ideas, .. }
                 }) = &mut self.view_manager.picker
                 else {
-                    unreachable!()
+                    panic!()
                 };
 
                 *query = new_query;
@@ -229,9 +247,20 @@ impl Pokisona {
                     (Key::Character("n"), keyboard::Modifiers::CTRL) => Message::NewIdea {
                         content: Content::new()
                     },
-                    (Key::Character("f"), keyboard::Modifiers::CTRL) => Message::OpenIdeaPicker,
+                    (Key::Character("f"), keyboard::Modifiers::CTRL) => {
+                        Message::OpenIdeaPicker { link: false }
+                    }
+                    (Key::Character("l"), keyboard::Modifiers::CTRL)
+                        if let View::Editor(_) = &*self.view_manager =>
+                    {
+                        Message::OpenIdeaPicker { link: true }
+                    }
                     (Key::Character("r"), keyboard::Modifiers::CTRL) => Message::OpenRandom,
-                    (Key::Character("s"), keyboard::Modifiers::CTRL) => Message::Save,
+                    (Key::Character("s"), keyboard::Modifiers::CTRL)
+                        if let View::Editor(_) = &*self.view_manager =>
+                    {
+                        Message::Save
+                    }
                     (Key::Character("t"), keyboard::Modifiers::CTRL) => Message::OpenTagPicker,
                     (Key::Named(key::Named::ArrowUp), keyboard::Modifiers::NONE)
                         if self.view_manager.picker.is_some() =>
@@ -266,10 +295,14 @@ impl Pokisona {
                     (Key::Named(key::Named::Enter), keyboard::Modifiers::NONE)
                         if let Some(Picker {
                             selected: Some(selected),
-                            kind: PickerKind::Idea { ideas, .. }
+                            kind: PickerKind::Idea { ideas, link, .. }
                         }) = &self.view_manager.picker =>
                     {
-                        Message::OpenIdea(ideas[*selected].0)
+                        if *link {
+                            Message::AddLink(ideas[*selected].0)
+                        } else {
+                            Message::OpenIdea(ideas[*selected].0)
+                        }
                     }
                     (Key::Named(key::Named::Enter), keyboard::Modifiers::NONE)
                         if let Some(Picker {
@@ -285,12 +318,28 @@ impl Pokisona {
                     (Key::Named(key::Named::ArrowRight), keyboard::Modifiers::ALT) => {
                         Message::HistoryForward
                     }
-                    (Key::Character("p"), keyboard::Modifiers::CTRL)
-                        if let View::Idea { idea, .. } = &*self.view_manager =>
-                    {
-                        Message::Reply(*idea)
-                    }
                     (Key::Character("w"), keyboard::Modifiers::CTRL) => Message::HistoryClose,
+                    (Key::Character("b"), keyboard::Modifiers::CTRL)
+                        if let View::Editor(content) = &*self.view_manager
+                            && content.cursor().selection.is_some() =>
+                    {
+                        Message::Bold
+                    }
+                    (Key::Character("i"), keyboard::Modifiers::CTRL)
+                        if let View::Editor(content) = &*self.view_manager
+                            && content.cursor().selection.is_some() =>
+                    {
+                        Message::Italic
+                    }
+                    (Key::Character("t"), modifiers)
+                        if let View::Editor(content) = &*self.view_manager
+                            && content.cursor().selection.is_some()
+                            && modifiers
+                                == keyboard::Modifiers::CTRL | keyboard::Modifiers::SHIFT =>
+                    {
+                        Message::Tag
+                    }
+
                     _ => return Ok(Task::none())
                 }));
             }
@@ -312,10 +361,107 @@ impl Pokisona {
                 self.view_manager.close_current(&mut self.cache)?;
                 return Ok(Task::done(Message::Refocus));
             }
-            Message::Reply(idea) => {
-                let mut content = Content::with_text(&format!("[[{idea}]] "));
-                content.perform(text_editor::Action::Move(Motion::End));
-                return Ok(Task::done(Message::NewIdea { content }));
+
+            Message::Italic => self.view_manager.modify(|view| {
+                let View::Editor(content) = view else {
+                    panic!()
+                };
+
+                let Cursor {
+                    position,
+                    selection
+                } = content.cursor();
+
+                content.move_to(Cursor {
+                    position: Position {
+                        line: position.line,
+                        index: min(position.index, selection.unwrap().index)
+                    },
+                    selection: None
+                });
+
+                content.perform(text_editor::Action::Edit(Edit::Insert('_')));
+
+                content.move_to(Cursor {
+                    position: Position {
+                        line: position.line,
+                        index: max(position.index, selection.unwrap().index)
+                    },
+                    selection: None
+                });
+
+                content.perform(text_editor::Action::Edit(Edit::Insert('_')));
+            })?,
+            Message::Bold => self.view_manager.modify(|view| {
+                let View::Editor(content) = view else {
+                    panic!()
+                };
+
+                let Cursor {
+                    position,
+                    selection
+                } = content.cursor();
+
+                content.move_to(Cursor {
+                    position: Position {
+                        line: position.line,
+                        index: min(position.index, selection.unwrap().index)
+                    },
+                    selection: None
+                });
+
+                (0..2).for_each(|_| content.perform(text_editor::Action::Edit(Edit::Insert('*'))));
+
+                content.move_to(Cursor {
+                    position: Position {
+                        line: position.line,
+                        index: max(position.index, selection.unwrap().index)
+                    },
+                    selection: None
+                });
+
+                (0..2).for_each(|_| content.perform(text_editor::Action::Edit(Edit::Insert('*'))));
+            })?,
+            Message::Tag => self.view_manager.modify(|view| {
+                let View::Editor(content) = view else {
+                    panic!();
+                };
+
+                let selection = content.selection().unwrap();
+                let tag = format!(
+                    "#{} ",
+                    selection.split_whitespace().collect::<Vec<_>>().join("_")
+                );
+                content.perform(text_editor::Action::Edit(Edit::Paste(Arc::new(tag))));
+            })?,
+            Message::List => self.view_manager.modify(|view| {
+                let View::Editor(content) = view else {
+                    panic!()
+                };
+                content.perform(text_editor::Action::Edit(Edit::Enter));
+                content.perform(text_editor::Action::Edit(Edit::Paste(Arc::new(
+                    "- ".to_string()
+                ))));
+            })?,
+            Message::NumberedList => self.view_manager.modify(|view| {
+                let View::Editor(content) = view else {
+                    panic!()
+                };
+                content.perform(text_editor::Action::Edit(Edit::Enter));
+                content.perform(text_editor::Action::Edit(Edit::Paste(Arc::new(
+                    "1. ".to_string()
+                ))));
+            })?,
+            Message::AddLink(idea) => {
+                self.view_manager.modify(|view| {
+                    let View::Editor(content) = view else {
+                        panic!()
+                    };
+                    content.perform(text_editor::Action::Edit(Edit::Paste(Arc::new(format!(
+                        "[[{idea}]]"
+                    )))));
+                })?;
+                return Ok(Task::done(Message::Refocus));
             }
         }
 

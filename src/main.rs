@@ -41,7 +41,12 @@ enum Message {
     NewIdea { content: text_editor::Content },
     Editor(text_editor::Action),
 
-    Reply(IdeaRef),
+    Italic,
+    Bold,
+    Tag,
+    AddLink(IdeaRef),
+    List,
+    NumberedList,
     Save,
 
     Refocus,
@@ -54,7 +59,7 @@ enum Message {
     OpenIdea(IdeaRef),
     OpenRandom,
 
-    OpenIdeaPicker,
+    OpenIdeaPicker { link: bool },
     OpenTagPicker,
     PickerQuery(String),
     PickDown,
