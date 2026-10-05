@@ -10,15 +10,15 @@ mod update;
 mod view;
 mod view_manager;
 
-use std::{cell::RefCell, env};
+use std::{cell::RefCell, env, fs};
 
 use iced::{
     Event, Subscription, event,
     keyboard::{self, Key},
     widget::{
         operation::focus,
-        text_editor::{self}
-    }
+        text_editor::{self},
+    },
 };
 use log::error;
 use lucide_icons::LUCIDE_FONT_BYTES;
@@ -26,14 +26,14 @@ use lucide_icons::LUCIDE_FONT_BYTES;
 use crate::{
     cache::{Cache, IdeaRef},
     theme::CatppuccinFrappe,
-    view_manager::ViewManager
+    view_manager::ViewManager,
 };
 
 struct Pokisona {
     error: Option<String>,
     view_manager: ViewManager,
     cache: Cache,
-    tag_filter: Option<String>
+    tag_filter: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -70,7 +70,7 @@ enum Message {
 
     HistoryForward,
     HistoryBackward,
-    HistoryClose
+    HistoryClose,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -78,7 +78,9 @@ fn main() -> anyhow::Result<()> {
 
     let vault_path = dirs::data_dir().unwrap().join("pokisona/vault");
 
+    fs::create_dir_all(&vault_path)?;
     env::set_current_dir(&vault_path)?;
+
     let mut cache = match Cache::load() {
         Ok(cache) => cache,
         Err(error) => {
@@ -94,7 +96,7 @@ fn main() -> anyhow::Result<()> {
         error: None,
         cache,
         view_manager,
-        tag_filter: None
+        tag_filter: None,
     }));
 
     let boot = move || (app.borrow_mut().take().unwrap(), focus("editor"));
