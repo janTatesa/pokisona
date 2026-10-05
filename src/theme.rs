@@ -30,12 +30,12 @@ impl iced::theme::Base for CatppuccinFrappe {
         }
     }
 
-    fn palette(&self) -> Option<iced::theme::Palette> {
-        None
-    }
-
     fn name(&self) -> &'static str {
         "Catppuccin frappe"
+    }
+
+    fn seed(&self) -> Option<palette::Seed> {
+        None
     }
 }
 
@@ -125,7 +125,14 @@ impl widget::text::Catalog for CatppuccinFrappe {
             TextClass::Danger => CATPPUCCIN.red
         }
         .into();
-        widget::text::Style { color: Some(color) }
+        widget::text::Style {
+            color: Some(color),
+            selection: None
+        }
+    }
+
+    fn selection(&self) -> Color {
+        Color::from(CATPPUCCIN.blue).scale_alpha(0.5)
     }
 }
 
@@ -311,7 +318,6 @@ impl text_input::Catalog for CatppuccinFrappe {
             border: border::rounded(BORDER_RADIUS)
                 .width(1.0)
                 .color(CATPPUCCIN.blue),
-            icon: CATPPUCCIN.blue.into(),
             placeholder: CATPPUCCIN.subtext0.into(),
             value: CATPPUCCIN.text.into(),
             selection: Color::from(CATPPUCCIN.blue).scale_alpha(0.2)

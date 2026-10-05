@@ -1,4 +1,4 @@
-use std::{ops::Range, str::FromStr};
+use std::str::FromStr;
 
 use bitflags::bitflags;
 use chumsky::{
@@ -7,17 +7,9 @@ use chumsky::{
     prelude::*,
     text::newline
 };
-use iced::{
-    Font,
-    advanced::text::highlighter,
-    font::{self, Family, Stretch, Weight}
-};
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    cache::{Cache, IdeaRef},
-    theme::CATPPUCCIN
-};
+use crate::cache::IdeaRef;
 
 #[derive(Debug, Clone)]
 pub struct Markdown(Vec<MarkdownLine>);
@@ -245,91 +237,5 @@ bitflags! {
         const NONE = 0;
         const ASTERISK = 1 << 0;
         const UNDERSCORE = 1 << 1;
-    }
-}
-
-#[derive(Debug)]
-pub struct Highlighted(pub Vec<Vec<(Range<usize>, highlighter::Format<Font>)>>);
-impl Eq for Highlighted {}
-impl PartialEq for Highlighted {
-    fn eq(&self, _other: &Self) -> bool {
-        false
-    }
-}
-impl Highlighted {
-    pub fn new(markdown: &Markdown, cache: &Cache) -> Self {
-        Self(
-            markdown
-                .0
-                .iter()
-                .map(|line| {
-                    line.list_item
-                        .map(|(range, _)| {
-                            let format = highlighter::Format {
-                                color: Some(CATPPUCCIN.blue.into()),
-                                font: None
-                            };
-                            (range.into_range(), format)
-                        })
-                        .into_iter()
-                        .chain(line.spans.iter().map(|(range, span)| {
-                            let format = match span {
-                                MarkdownSpan::ModifierDelimeter => highlighter::Format {
-                                    color: Some(CATPPUCCIN.overlay0.into()),
-                                    font: None
-                                },
-                                MarkdownSpan::Text(_, modifiers) => highlighter::Format {
-                                    color: (*modifiers != Modifiers::NONE)
-                                        .then_some(CATPPUCCIN.blue.into()),
-                                    font: Some(Font {
-                                        family: Family::Name("Libron"),
-                                        weight: if modifiers.contains(Modifiers::BOLD) {
-                                            Weight::Bold
-                                        } else {
-                                            Weight::Normal
-                                        },
-                                        stretch: Stretch::Normal,
-                                        style: if modifiers.contains(Modifiers::ITALIC) {
-                                            font::Style::Italic
-                                        } else {
-                                            font::Style::Normal
-                                        }
-                                    })
-                                },
-
-                                MarkdownSpan::Tag(tag) => {
-                                    let color = cache
-                                        .tags()
-                                        .get(tag)
-                                        .map_or(cache.next_tag_color(), |tag| tag.color);
-                                    highlighter::Format {
-                                        color: Some(CATPPUCCIN[color].into()),
-                                        font: None
-                                    }
-                                }
-                                MarkdownSpan::Link { modifiers, .. } => highlighter::Format {
-                                    color: Some(CATPPUCCIN.blue.into()),
-                                    font: Some(Font {
-                                        family: Family::Name("Libron"),
-                                        weight: if modifiers.contains(Modifiers::BOLD) {
-                                            Weight::Bold
-                                        } else {
-                                            Weight::Normal
-                                        },
-                                        stretch: Stretch::Normal,
-                                        style: if modifiers.contains(Modifiers::ITALIC) {
-                                            font::Style::Italic
-                                        } else {
-                                            font::Style::Normal
-                                        }
-                                    })
-                                }
-                            };
-                            (range.into_range(), format)
-                        }))
-                        .collect()
-                })
-                .collect()
-        )
     }
 }

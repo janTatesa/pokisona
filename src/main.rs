@@ -26,7 +26,6 @@ use lucide_icons::LUCIDE_FONT_BYTES;
 use crate::{
     cache::{Cache, IdeaRef},
     theme::CatppuccinFrappe,
-    view::BASE_FONT_SIZE,
     view_manager::ViewManager
 };
 
@@ -36,9 +35,6 @@ struct Pokisona {
     cache: Cache,
     tag_filter: Option<String>
 }
-
-type Element<'a, M = Message> = iced::Element<'a, M, CatppuccinFrappe>;
-type Task<M = Message> = iced::Task<M>;
 
 #[derive(Clone, Debug)]
 enum Message {
@@ -98,16 +94,18 @@ fn main() -> anyhow::Result<()> {
 
     let boot = move || (app.borrow_mut().take().unwrap(), focus("editor"));
     iced::application(boot, Pokisona::update, Pokisona::view)
+        .theme(Pokisona::theme)
         .settings(iced::Settings {
-            default_text_size: BASE_FONT_SIZE.into(),
+            id: Some("pokisona".to_string()),
+            fonts: vec![
+                LUCIDE_FONT_BYTES.into(),
+                include_bytes!("../fonts/Libron_Regular.ttf").into(),
+                include_bytes!("../fonts/Libron_Bold.ttf").into(),
+                include_bytes!("../fonts/Libron_Italic.ttf").into(),
+                include_bytes!("../fonts/Libron_BoldItalic.ttf").into(),
+            ],
             ..Default::default()
         })
-        .theme(Pokisona::theme)
-        .font(LUCIDE_FONT_BYTES)
-        .font(include_bytes!("../fonts/Libron_Regular.ttf"))
-        .font(include_bytes!("../fonts/Libron_Bold.ttf"))
-        .font(include_bytes!("../fonts/Libron_Italic.ttf"))
-        .font(include_bytes!("../fonts/Libron_BoldItalic.ttf"))
         .subscription(Pokisona::subscription)
         .run()?;
     Ok(())

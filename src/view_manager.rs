@@ -1,12 +1,12 @@
 mod serde;
-use std::{collections::HashMap, fs, io, ops::Deref, path::PathBuf, rc::Rc, sync::LazyLock};
+use std::{collections::HashMap, fs, io, ops::Deref, path::PathBuf, sync::LazyLock};
 
 use ::serde::{Deserialize, Serialize};
 use iced::widget::text_editor::{self};
 
 use crate::{
     cache::{Cache, IdeaRef},
-    markdown::{Highlighted, Markdown},
+    markdown::Markdown,
     view_manager::serde::ViewSerde
 };
 
@@ -123,10 +123,7 @@ impl ViewManager {
 #[derive(Debug)]
 pub enum View {
     Title,
-    Editor {
-        content: text_editor::Content,
-        highlighted: Rc<Highlighted>
-    },
+    Editor(text_editor::Content),
     Idea {
         idea: IdeaRef,
         current_ideas: HashMap<IdeaRef, Markdown>

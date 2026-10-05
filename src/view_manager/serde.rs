@@ -1,11 +1,13 @@
-use std::{io, rc::Rc};
+use std::io;
 
-use iced::widget::text_editor::{Content, Cursor, Position};
+use iced::widget::{
+    text::Position,
+    text_editor::{Content, Cursor}
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     cache::{Cache, IdeaRef},
-    markdown::{Highlighted, Markdown},
     view_manager::View
 };
 
@@ -40,18 +42,15 @@ impl ViewSerde {
                 content.move_to(Cursor {
                     position: Position {
                         line: position.line,
-                        column: position.column
+                        index: position.column
                     },
                     selection: selection.map(|selection| Position {
                         line: selection.line,
-                        column: selection.column
+                        index: selection.column
                     })
                 });
-                let highlighted = Rc::new(Highlighted::new(&Markdown::new(text), cache));
-                View::Editor {
-                    content,
-                    highlighted
-                }
+
+                View::Editor(content)
             }
             Self::Idea(idea) => View::Idea {
                 idea: *idea,
@@ -65,7 +64,7 @@ impl View {
     pub fn to_serde(&self) -> ViewSerde {
         match self {
             View::Title => ViewSerde::Title,
-            View::Editor { content, .. } => {
+            View::Editor(content) => {
                 let Cursor {
                     position,
                     selection
@@ -74,11 +73,11 @@ impl View {
                     text: content.text(),
                     position: PositionSerde {
                         line: position.line,
-                        column: position.column
+                        column: position.index
                     },
                     selection: selection.map(|selection| PositionSerde {
                         line: selection.line,
-                        column: selection.column
+                        column: selection.index
                     })
                 }
             }

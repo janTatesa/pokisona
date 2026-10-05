@@ -1,7 +1,8 @@
-use std::{fs, io, rc::Rc};
+use std::{fs, io};
 
 use either::Either;
 use iced::{
+    Task,
     keyboard::{self, Key, key},
     widget::{
         operation::focus,
@@ -16,13 +17,13 @@ use norm::{
 use rand::seq::IndexedRandom;
 
 use crate::{
-    Message, Pokisona, Task,
-    markdown::{Highlighted, Markdown},
+    Message, Pokisona,
+    markdown::Markdown,
     view_manager::{Picker, PickerKind, View}
 };
 
 impl Pokisona {
-    pub fn update(&mut self, msg: Message) -> Task {
+    pub fn update(&mut self, msg: Message) -> Task<Message> {
         self.error = None;
 
         match self.try_update(msg) {
@@ -35,7 +36,7 @@ impl Pokisona {
         }
     }
 
-    fn try_update(&mut self, msg: Message) -> anyhow::Result<Task> {
+    fn try_update(&mut self, msg: Message) -> anyhow::Result<Task<Message>> {
         match msg {
             Message::Refocus => {
                 return Ok(focus(if self.view_manager.picker.is_some() {
@@ -47,29 +48,16 @@ impl Pokisona {
 
             Message::Editor(action) => {
                 self.view_manager.modify(|view| {
-                    let View::Editor {
-                        content,
-                        highlighted
-                    } = view
-                    else {
+                    let View::Editor(content) = view else {
                         unreachable!()
                     };
 
-                    let is_edit = matches!(action, text_editor::Action::Edit(_));
-
                     content.perform(action);
-
-                    if is_edit {
-                        *highlighted = Rc::new(Highlighted::new(
-                            &Markdown::new(&content.text()),
-                            &self.cache
-                        ));
-                    }
                 })?;
             }
             Message::Save => {
                 self.view_manager.modify(|view| -> io::Result<()> {
-                    let View::Editor { content, .. } = view else {
+                    let View::Editor(content) = view else {
                         unreachable!()
                     };
 
@@ -156,15 +144,7 @@ impl Pokisona {
             }
 
             Message::NewIdea { content } => {
-                self.view_manager.insert(View::Editor {
-                    highlighted: Rc::new(Highlighted::new(
-                        &Markdown::new(&content.text()),
-                        &self.cache
-                    )),
-
-                    content
-                })?;
-
+                self.view_manager.insert(View::Editor(content))?;
                 return Ok(focus("editor"));
             }
             Message::PickerQuery(new_query) => {

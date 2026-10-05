@@ -4,11 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-iced = { version = "0.14", features = ["advanced", "smol"] }
+iced = { git = "https://github.com/iced-rs/iced", features = ["advanced", "smol", "wayland"] }
 dirs = "7.0.0"
 bitflags = { version = "2.10.0", features = ["serde"] }
 itertools = "0.15.0"
-lucide-icons = { version = "*", features = ["iced"] }
+lucide-icons = { version = "*" }
 strum = { version = "0.28.0", features = ["derive"] }
 chumsky = { version = "0.13.0", features = ["lexical-numbers", "serde"] }
 jiff = { version = "0.2.34", features = ["serde"] }
@@ -21,5 +21,5 @@ log = "0.4.33"
 env_logger = "0.11.11"
 fuzzy-search = "0.1.0"
 norm = { version = "0.1.1", features = ["fzf-v2"] }
-catppuccin = { git = "https://github.com/janTatesa/catppuccin-rust", version = "2.6.0", features = ["iced", "serde"] }
+catppuccin = { git = "https://github.com/janTatesa/catppuccin-rust", branch = "iced_master", version = "2.6.0", features = ["iced", "serde"] }
 either = "1.18.0"
