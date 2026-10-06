@@ -104,19 +104,16 @@ fn main() -> color_eyre::Result<()> {
     let boot = move || (app.borrow_mut().take().unwrap(), focus("editor"));
     iced::application(boot, Pokisona::update, Pokisona::view)
         .theme(Pokisona::theme)
-        .settings(iced::Settings {
-            id: Some("pokisona".to_string()),
-            fonts: vec![
-                LUCIDE_FONT_BYTES.into(),
-                include_bytes!("../fonts/Libron_Regular.ttf").into(),
-                include_bytes!("../fonts/Libron_Bold.ttf").into(),
-                include_bytes!("../fonts/Libron_Italic.ttf").into(),
-                include_bytes!("../fonts/Libron_BoldItalic.ttf").into(),
-            ],
-            ..Default::default()
-        })
+        .fonts([
+            LUCIDE_FONT_BYTES,
+            include_bytes!("../fonts/Ubuntu-Regular.ttf"),
+            include_bytes!("../fonts/Libron_Regular.ttf"),
+            include_bytes!("../fonts/Libron_Bold.ttf"),
+            include_bytes!("../fonts/Libron_Italic.ttf"),
+            include_bytes!("../fonts/Libron_BoldItalic.ttf"),
+        ])
         .font(iced::Font {
-            family: Family::Name("Libron"),
+            family: Family::Name("Ubuntu"),
             ..Default::default()
         })
         .subscription(Pokisona::subscription)

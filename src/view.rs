@@ -108,6 +108,10 @@ impl Pokisona {
                         })
                         .wrapping(Wrapping::WordOrGlyph)
                         .placeholder("Your idea...")
+                        .font(Font {
+                            family: font::Family::Name("Libron"),
+                            ..Default::default()
+                        })
                         .width(IDEA_SIZE)
                         .height(IDEA_SIZE / 2.0)
                         .padding(SPACING)
@@ -205,6 +209,16 @@ impl Pokisona {
                 "Go forward (Alt-right)",
                 ButtonClass::Primary
             ),
+            container(
+                row![
+                    widget::text(self.view_manager.index() + 1),
+                    widget::text("/").class(TextClass::Overlay0),
+                    widget::text(self.view_manager.total_views())
+                ]
+                .spacing(SPACING)
+            )
+            .padding(button::DEFAULT_PADDING)
+            .class(ContainerClass::Surface0)
         ]
         .spacing(SPACING);
 
@@ -441,6 +455,7 @@ impl Pokisona {
                 Link::Idea(idea) => on_idea_link_click(idea),
                 Link::Tag(tag) => Message::SetTagFilter(tag),
             })
+            .selectable(true)
             .size(size);
         let scale = if options.enlarged { 1.5 } else { 1.0 };
         container(scrollable(

@@ -5,8 +5,8 @@ use iced::{
     widget::{
         self, button, container, rule,
         scrollable::{self, AutoScroll, Rail, Scroller},
-        text_editor, text_input
-    }
+        text_editor, text_input,
+    },
 };
 
 pub const CATPPUCCIN: FlavorColors = catppuccin::PALETTE.frappe.colors;
@@ -26,7 +26,7 @@ impl iced::theme::Base for CatppuccinFrappe {
     fn base(&self) -> iced::theme::Style {
         iced::theme::Style {
             background_color: (CATPPUCCIN.mantle).into(),
-            text_color: (CATPPUCCIN.text).into()
+            text_color: (CATPPUCCIN.text).into(),
         }
     }
 
@@ -46,7 +46,7 @@ pub enum ContainerClass {
     Base,
     Tint,
     Tag { color: ColorName },
-    BorderedBox { highlighted: bool }
+    BorderedBox { highlighted: bool },
 }
 
 impl container::Catalog for CatppuccinFrappe {
@@ -77,7 +77,7 @@ impl container::Catalog for CatppuccinFrappe {
                                 CATPPUCCIN.blue
                             } else {
                                 CATPPUCCIN.overlay0
-                            })
+                            }),
                     )
                     .shadow(if *highlighted {
                         Shadow {
@@ -92,20 +92,16 @@ impl container::Catalog for CatppuccinFrappe {
             }
             ContainerClass::Tag { color } => container::Style::default()
                 .background(CATPPUCCIN[*color])
-                .color(CATPPUCCIN.crust)
+                .color(CATPPUCCIN.crust),
         }
         .border(border::rounded(BORDER_RADIUS))
     }
 }
 
-#[expect(unused)]
 pub enum TextClass {
     Inherit,
-
-    Main,
-    Accent,
-    Subtext0,
-    Danger
+    Overlay0,
+    Danger,
 }
 
 impl widget::text::Catalog for CatppuccinFrappe {
@@ -118,16 +114,13 @@ impl widget::text::Catalog for CatppuccinFrappe {
     fn style(&self, class: &Self::Class<'_>) -> widget::text::Style {
         let color = match class {
             TextClass::Inherit => return widget::text::Style::default(),
-
-            TextClass::Main => CATPPUCCIN.text,
-            TextClass::Accent => CATPPUCCIN.blue,
-            TextClass::Subtext0 => CATPPUCCIN.subtext0,
-            TextClass::Danger => CATPPUCCIN.red
+            TextClass::Overlay0 => CATPPUCCIN.overlay0,
+            TextClass::Danger => CATPPUCCIN.red,
         }
         .into();
         widget::text::Style {
             color: Some(color),
-            selection: None
+            selection: None,
         }
     }
 
@@ -139,7 +132,7 @@ impl widget::text::Catalog for CatppuccinFrappe {
 pub enum ButtonClass {
     Primary,
     Secondary,
-    Tag { highlight: bool, color: ColorName }
+    Tag { highlight: bool, color: ColorName },
 }
 
 impl button::Catalog for CatppuccinFrappe {
@@ -154,19 +147,19 @@ impl button::Catalog for CatppuccinFrappe {
             ButtonClass::Primary => (CATPPUCCIN.blue.into(), CATPPUCCIN.crust.into()),
             ButtonClass::Tag {
                 highlight: true,
-                color
+                color,
             } => (CATPPUCCIN[*color].into(), CATPPUCCIN.crust.into()),
             ButtonClass::Tag {
                 highlight: false,
-                color
+                color,
             } => (CATPPUCCIN.overlay0.into(), CATPPUCCIN[*color].into()),
-            ButtonClass::Secondary => (CATPPUCCIN.crust.into(), CATPPUCCIN.text.into())
+            ButtonClass::Secondary => (CATPPUCCIN.crust.into(), CATPPUCCIN.text.into()),
         };
 
         let background = match status {
             button::Status::Active => background,
             button::Status::Hovered | button::Status::Pressed => palette::deviate(background, 0.1),
-            button::Status::Disabled => background.scale_alpha(0.5)
+            button::Status::Disabled => background.scale_alpha(0.5),
         };
 
         button::Style {
@@ -189,8 +182,8 @@ impl scrollable::Catalog for CatppuccinFrappe {
             border: border::rounded(BORDER_RADIUS),
             scroller: Scroller {
                 background: (CATPPUCCIN.overlay2).into(),
-                border: border::rounded(BORDER_RADIUS)
-            }
+                border: border::rounded(BORDER_RADIUS),
+            },
         };
 
         let auto_scroll = AutoScroll {
@@ -201,9 +194,9 @@ impl scrollable::Catalog for CatppuccinFrappe {
             shadow: Shadow {
                 color: Color::BLACK.scale_alpha(0.7),
                 offset: Vector::ZERO,
-                blur_radius: 2.0
+                blur_radius: 2.0,
             },
-            icon: Color::from(CATPPUCCIN.text).scale_alpha(0.8)
+            icon: Color::from(CATPPUCCIN.text).scale_alpha(0.8),
         };
 
         match status {
@@ -212,7 +205,7 @@ impl scrollable::Catalog for CatppuccinFrappe {
                 vertical_rail: scrollbar,
                 horizontal_rail: scrollbar,
                 gap: None,
-                auto_scroll
+                auto_scroll,
             },
             scrollable::Status::Hovered {
                 is_horizontal_scrollbar_hovered,
@@ -240,7 +233,7 @@ impl scrollable::Catalog for CatppuccinFrappe {
                         scrollbar
                     },
                     gap: None,
-                    auto_scroll
+                    auto_scroll,
                 }
             }
             scrollable::Status::Dragged {
@@ -269,7 +262,7 @@ impl scrollable::Catalog for CatppuccinFrappe {
                         scrollbar
                     },
                     gap: None,
-                    auto_scroll
+                    auto_scroll,
                 }
             }
         }
@@ -287,7 +280,7 @@ impl text_editor::Catalog for CatppuccinFrappe {
             border: border::rounded(5.0),
             placeholder: (CATPPUCCIN.subtext0).into(),
             value: (CATPPUCCIN.text).into(),
-            selection: Color::from(CATPPUCCIN.blue).scale_alpha(0.2)
+            selection: Color::from(CATPPUCCIN.blue).scale_alpha(0.2),
         }
     }
 }
@@ -302,7 +295,7 @@ impl rule::Catalog for CatppuccinFrappe {
             color: CATPPUCCIN.overlay0.into(),
             radius: BORDER_RADIUS.into(),
             fill_mode: rule::FillMode::Full,
-            snap: false
+            snap: false,
         }
     }
 }
@@ -320,7 +313,7 @@ impl text_input::Catalog for CatppuccinFrappe {
                 .color(CATPPUCCIN.blue),
             placeholder: CATPPUCCIN.subtext0.into(),
             value: CATPPUCCIN.text.into(),
-            selection: Color::from(CATPPUCCIN.blue).scale_alpha(0.2)
+            selection: Color::from(CATPPUCCIN.blue).scale_alpha(0.2),
         }
     }
 }

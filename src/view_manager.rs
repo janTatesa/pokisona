@@ -53,6 +53,14 @@ impl ViewManager {
         })
     }
 
+    pub fn total_views(&self) -> usize {
+        self.history.views.len()
+    }
+
+    pub fn index(&self) -> usize {
+        self.history.index
+    }
+
     pub fn modify<T>(&mut self, f: impl FnOnce(&mut View) -> T) -> io::Result<T> {
         let out = f(&mut self.view);
         self.history.views[self.history.index] = self.view.to_serde();
