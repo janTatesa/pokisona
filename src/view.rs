@@ -44,10 +44,18 @@ impl Pokisona {
     pub fn view(&self) -> impl Widget<Message, CatppuccinFrappe> {
         let content: Element<_, _> = match &*self.view_manager {
             View::Title => container(
-                container(self.view_markdown(&TITLE))
-                    .width(IDEA_SIZE)
-                    .padding(SPACING)
-                    .class(ContainerClass::BorderedBox { highlighted: false }),
+                container(self.view_idea(
+                    None,
+                    &TITLE,
+                    ViewIdeaOptions {
+                        enlarged: true,
+                        highlighted: false,
+                    },
+                    Message::OpenIdea,
+                ))
+                .width(IDEA_SIZE)
+                .padding(SPACING)
+                .class(ContainerClass::BorderedBox { highlighted: false }),
             )
             .padding(SPACING * 2.0)
             .boxed(),
@@ -459,76 +467,6 @@ impl Pokisona {
         })
         .width(IDEA_SIZE * scale)
         .padding(SPACING)
-    }
-
-    fn view_markdown<'a>(
-        &self,
-        markdown: &'a Markdown,
-    ) -> Rich<'a, Link, Message, CatppuccinFrappe> {
-        let text_span = |text: Cow<'a, str>, modifiers: Modifiers| {
-            widget::span(text).font(Font {
-                weight: if modifiers.contains(Modifiers::BOLD) {
-                    font::Weight::Bold
-                } else {
-                    font::Weight::Normal
-                },
-                style: if modifiers.contains(Modifiers::ITALIC) {
-                    font::Style::Italic
-                } else {
-                    font::Style::Normal
-                },
-                ..Default::default()
-            })
-        };
-
-        let spans = markdown
-            .lines()
-            .iter()
-            .flat_map(|line| {
-                iter::once(span('\n'))
-                    .chain(line.list_item.map(|(_, item)| {
-                        match item {
-                            markdown::ListItem::Bullet => {
-                                text_span(" • ".into(), Modifiers::ITALIC)
-                            }
-                            markdown::ListItem::Number(number) => {
-                                text_span(format!(" {number}.").into(), Modifiers::ITALIC)
-                            }
-                        }
-                        .color(CATPPUCCIN.blue)
-                    }))
-                    .chain(line.spans.iter().map(|(_, span)| {
-                        match span {
-                            MarkdownSpan::Text(span, modifiers) => {
-                                let color =
-                                    (*modifiers != Modifiers::NONE).then_some(CATPPUCCIN.blue);
-                                text_span(span.into(), *modifiers).color_maybe(color)
-                            }
-
-                            MarkdownSpan::Link {
-                                display,
-                                target,
-                                modifiers,
-                            } => text_span(
-                                display
-                                    .as_deref()
-                                    .map(Cow::from)
-                                    .unwrap_or(target.to_string().into()),
-                                *modifiers,
-                            )
-                            .color(CATPPUCCIN.blue)
-                            .link(Link::Idea(*target)),
-                            MarkdownSpan::ModifierDelimeter => "".into(),
-                            MarkdownSpan::Tag(tag) => widget::span(format!("#{tag}"))
-                                .background(CATPPUCCIN[self.cache.tags()[tag].color])
-                                .link(Link::Tag(tag.clone()))
-                                .color(CATPPUCCIN.crust)
-                                .border(border::rounded(2)),
-                        }
-                    }))
-            })
-            .skip(1);
-        spans.collect()
     }
 }
 
