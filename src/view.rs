@@ -43,21 +43,16 @@ pub const BASE_FONT_SIZE: f32 = 18.0;
 impl Pokisona {
     pub fn view(&self) -> impl Widget<Message, CatppuccinFrappe> {
         let content: Element<_, _> = match &*self.view_manager {
-            View::Title => container(
-                container(self.view_idea(
-                    None,
-                    &TITLE,
-                    ViewIdeaOptions {
-                        enlarged: true,
-                        highlighted: false,
-                    },
-                    Message::OpenIdea,
-                ))
-                .width(IDEA_SIZE)
-                .padding(SPACING)
-                .class(ContainerClass::BorderedBox { highlighted: false }),
-            )
-            .padding(SPACING * 2.0)
+            View::Title => container(self.view_idea(
+                None,
+                &TITLE,
+                ViewIdeaOptions {
+                    enlarged: true,
+                    highlighted: false,
+                },
+                Message::OpenIdea,
+            ))
+            .center(Length::Fill)
             .boxed(),
 
             View::Editor(content) => {
