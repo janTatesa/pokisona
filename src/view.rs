@@ -11,7 +11,7 @@ use iced::{
     Alignment, Element, Font, Length, Widget,
     advanced::text::highlighter,
     border,
-    font::{self, Family},
+    font::{self},
     keyboard::{
         Key::{self},
         key,
@@ -381,6 +381,7 @@ impl Pokisona {
                 } else {
                     font::Style::Normal
                 },
+                family: font::Family::Name("Libron"),
                 ..Default::default()
             })
         };
