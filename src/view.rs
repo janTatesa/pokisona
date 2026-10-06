@@ -177,7 +177,7 @@ impl Pokisona {
                 content,
                 container(tooltip)
                     .class(ContainerClass::Surface1)
-                    .padding(SPACING),
+                    .padding(button::DEFAULT_PADDING),
                 tooltip::Position::Bottom,
             )
             .gap(SPACING)
