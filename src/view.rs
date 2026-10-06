@@ -364,7 +364,7 @@ impl Pokisona {
         stack![
             center(content).class(ContainerClass::Base),
             stack![
-                (!self.zen_mode).then_some(top_right_buttons),
+                top_left.width(Length::Fill).height(Length::Shrink),
                 container(self.tag_filter.as_ref().map(|tag| {
                     row![
                         "Filtering by",
@@ -385,7 +385,7 @@ impl Pokisona {
                 }))
                 .padding(SPACING)
                 .center_x(Length::Fill),
-                top_left,
+                (!self.zen_mode).then_some(top_right_buttons),
             ],
             overlay,
             picker
