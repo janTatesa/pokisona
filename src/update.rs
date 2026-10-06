@@ -375,7 +375,7 @@ impl Pokisona {
                 content.move_to(Cursor {
                     position: Position {
                         line: position.line,
-                        index: min(position.index, selection.unwrap().index),
+                        index: max(position.index, selection.unwrap().index),
                     },
                     selection: None,
                 });
@@ -385,12 +385,19 @@ impl Pokisona {
                 content.move_to(Cursor {
                     position: Position {
                         line: position.line,
-                        index: max(position.index, selection.unwrap().index),
+                        index: min(position.index, selection.unwrap().index),
                     },
                     selection: None,
                 });
 
                 content.perform(text_editor::Action::Edit(Edit::Insert('_')));
+                content.move_to(Cursor {
+                    position: Position {
+                        line: position.line,
+                        index: position.index + 2,
+                    },
+                    selection: None,
+                });
             })?,
             Message::Bold => self.view_manager.modify(|view| {
                 let View::Editor(content) = view else {
@@ -405,7 +412,7 @@ impl Pokisona {
                 content.move_to(Cursor {
                     position: Position {
                         line: position.line,
-                        index: min(position.index, selection.unwrap().index),
+                        index: max(position.index, selection.unwrap().index),
                     },
                     selection: None,
                 });
@@ -415,12 +422,19 @@ impl Pokisona {
                 content.move_to(Cursor {
                     position: Position {
                         line: position.line,
-                        index: max(position.index, selection.unwrap().index),
+                        index: min(position.index, selection.unwrap().index),
                     },
                     selection: None,
                 });
 
                 (0..2).for_each(|_| content.perform(text_editor::Action::Edit(Edit::Insert('*'))));
+                content.move_to(Cursor {
+                    position: Position {
+                        line: position.line,
+                        index: position.index + 2,
+                    },
+                    selection: None,
+                });
             })?,
             Message::Tag => self.view_manager.modify(|view| {
                 let View::Editor(content) = view else {
