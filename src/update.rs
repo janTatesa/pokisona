@@ -64,7 +64,7 @@ impl Pokisona {
                         let start = match line.list_item {
                             Some((_, ListItem::Bullet)) => "- ".to_string(),
                             Some((_, ListItem::Number(number))) => format!("{}. ", number + 1),
-                            None => todo!(),
+                            None => String::new(),
                         };
                         content.perform(action);
                         content.perform(text_editor::Action::Edit(Edit::Paste(Arc::new(start))));

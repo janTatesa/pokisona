@@ -98,10 +98,6 @@ impl Pokisona {
                     .height(Length::Shrink),
                     widget::text_editor(content)
                         .on_action(Message::Editor)
-                        .font(Font {
-                            family: Family::Name("Libron"),
-                            ..Default::default()
-                        })
                         .key_binding(|press| match press.key {
                             Key::Named(key::Named::Escape) => None,
 
@@ -385,7 +381,6 @@ impl Pokisona {
                 } else {
                     font::Style::Normal
                 },
-                family: Family::Name("Libron"),
                 ..Default::default()
             })
         };
@@ -481,7 +476,6 @@ impl Pokisona {
                 } else {
                     font::Style::Normal
                 },
-                family: Family::Name("Libron"),
                 ..Default::default()
             })
         };

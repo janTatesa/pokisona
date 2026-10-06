@@ -14,6 +14,7 @@ use std::{cell::RefCell, env, fs};
 
 use iced::{
     Event, Subscription, event,
+    font::Family,
     keyboard::{self, Key},
     widget::{
         operation::focus,
@@ -112,6 +113,10 @@ fn main() -> color_eyre::Result<()> {
                 include_bytes!("../fonts/Libron_Italic.ttf").into(),
                 include_bytes!("../fonts/Libron_BoldItalic.ttf").into(),
             ],
+            ..Default::default()
+        })
+        .font(iced::Font {
+            family: Family::Name("Libron"),
             ..Default::default()
         })
         .subscription(Pokisona::subscription)
