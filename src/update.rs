@@ -339,6 +339,7 @@ impl Pokisona {
                     {
                         Message::Tag
                     }
+                    (Key::Character("z"), keyboard::Modifiers::CTRL) => Message::ToggleZenMode,
 
                     _ => return Ok(Task::none()),
                 }));
@@ -477,6 +478,7 @@ impl Pokisona {
                 })?;
                 return Ok(Task::done(Message::Refocus));
             }
+            Message::ToggleZenMode => self.zen_mode ^= true,
         }
 
         Ok(Task::none())

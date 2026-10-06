@@ -32,6 +32,7 @@ use crate::{
 
 struct Pokisona {
     error: Option<String>,
+    zen_mode: bool,
     view_manager: ViewManager,
     cache: Cache,
     tag_filter: Option<String>,
@@ -49,6 +50,8 @@ enum Message {
     List,
     NumberedList,
     Save,
+
+    ToggleZenMode,
 
     Refocus,
 
@@ -99,6 +102,7 @@ fn main() -> color_eyre::Result<()> {
         cache,
         view_manager,
         tag_filter: None,
+        zen_mode: false,
     }));
 
     let boot = move || (app.borrow_mut().take().unwrap(), focus("editor"));

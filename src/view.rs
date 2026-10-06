@@ -58,7 +58,7 @@ impl Pokisona {
             View::Editor(content) => {
                 let on_selection = |m: Message| content.cursor().selection.is_some().then_some(m);
                 column![
-                    row![
+                    (!self.zen_mode).then(|| row![
                         button_helper(
                             Icon::Italic,
                             on_selection(Message::Italic),
@@ -98,7 +98,7 @@ impl Pokisona {
                         )
                     ]
                     .spacing(SPACING)
-                    .height(Length::Shrink),
+                    .height(Length::Shrink)),
                     widget::text_editor(content)
                         .on_action(Message::Editor)
                         .key_binding(|press| match press.key {
@@ -183,6 +183,16 @@ impl Pokisona {
             .gap(SPACING)
         }
 
+        let page_indicator = container(
+            row![
+                widget::text(self.view_manager.index() + 1),
+                widget::text("/").class(TextClass::Overlay0),
+                widget::text(self.view_manager.total_views())
+            ]
+            .spacing(SPACING),
+        )
+        .padding(button::DEFAULT_PADDING)
+        .class(ContainerClass::Surface0);
         let top_left_buttons = row![
             button_helper(
                 Icon::CircleX,
@@ -209,18 +219,23 @@ impl Pokisona {
                 "Go forward (Alt-right)",
                 ButtonClass::Primary
             ),
-            container(
-                row![
-                    widget::text(self.view_manager.index() + 1),
-                    widget::text("/").class(TextClass::Overlay0),
-                    widget::text(self.view_manager.total_views())
-                ]
-                .spacing(SPACING)
-            )
-            .padding(button::DEFAULT_PADDING)
-            .class(ContainerClass::Surface0)
+            rule::vertical(1.0)
         ]
         .spacing(SPACING);
+
+        let error = self
+            .error
+            .as_ref()
+            .map(|error| widget::text(error).class(TextClass::Danger));
+
+        let top_left = row![
+            (!self.zen_mode).then_some(top_left_buttons),
+            page_indicator,
+            error
+        ]
+        .spacing(SPACING)
+        .padding(SPACING)
+        .align_y(Alignment::Center);
 
         let top_right_buttons = if let View::Editor { .. } = &*self.view_manager {
             row![
@@ -266,20 +281,19 @@ impl Pokisona {
                 ButtonClass::Primary,
             )
             .boxed(),
+            button_helper(
+                Icon::Keyboard,
+                Some(Message::ToggleZenMode),
+                "Toggle zen mode (Ctrl-z)",
+                ButtonClass::Primary,
+            )
+            .boxed(),
         ])
         .height(Length::Shrink)
         .spacing(SPACING);
         let top_right_buttons = container(top_right_buttons)
             .align_right(Length::Fill)
             .padding(SPACING);
-        let error = self
-            .error
-            .as_ref()
-            .map(|error| widget::text(error).class(TextClass::Danger));
-        let top_left = row![top_left_buttons, error]
-            .spacing(SPACING)
-            .padding(SPACING)
-            .align_y(Alignment::Center);
         let picker = self.view_manager.picker.as_ref().map(|picker| {
             let content = match &picker.kind {
                 PickerKind::Idea { query, ideas, link } => column![
@@ -350,7 +364,7 @@ impl Pokisona {
         stack![
             center(content).class(ContainerClass::Base),
             stack![
-                top_right_buttons,
+                (!self.zen_mode).then_some(top_right_buttons),
                 container(self.tag_filter.as_ref().map(|tag| {
                     row![
                         "Filtering by",
@@ -359,12 +373,12 @@ impl Pokisona {
                                 color: self.cache.tags()[tag].color
                             }
                         ),
-                        button_helper(
+                        (!self.zen_mode).then_some(button_helper(
                             Icon::X,
                             Some(Message::UnsetTagFilter),
                             "Unset (esc)",
                             ButtonClass::Secondary
-                        )
+                        ))
                     ]
                     .align_y(Alignment::Center)
                     .spacing(SPACING)
