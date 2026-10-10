@@ -80,6 +80,11 @@ impl Pokisona {
                     };
 
                     let contents = content.text();
+
+                    if contents.split_whitespace().next().is_none() {
+                        return Ok(());
+                    }
+
                     let markdown = Markdown::new(&contents);
                     let idea = self.cache.create(&contents, &markdown)?;
                     *view = View::Idea {

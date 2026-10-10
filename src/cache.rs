@@ -85,7 +85,7 @@ impl Cache {
         let this: Self = postcard::from_bytes(&fs::read(&*PATH)?)?;
         if this.last_modified < fs::metadata(env::current_dir()?)?.modified()? {
             warn!("Vault has been modified by external process, rebuilding cache");
-            Self::new()
+            Self::build()
         } else {
             Ok(this)
         }
