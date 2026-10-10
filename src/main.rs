@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 #![deny(clippy::pedantic)]
 #![allow(clippy::unchecked_time_subtraction)]
 #![allow(clippy::too_many_lines)]
